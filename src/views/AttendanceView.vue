@@ -1,5 +1,6 @@
 <script setup>
 import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
+import QrcodeVue from 'qrcode.vue'
 import { useAuthStore } from '../stores/auth'
 import { useAttendanceStore } from '../stores/attendance'
 import { useMembersStore } from '../stores/members'
@@ -309,7 +310,7 @@ function askDeleteSession(s) { confirmTarget.value = s; confirmAction.value = 'd
 function askDeleteAttendance(a) { confirmTarget.value = a; confirmAction.value = 'delete_attendance'; showConfirmModal.value = true }
 function askDeleteReason(r) { confirmTarget.value = r; confirmAction.value = 'delete_reason'; showConfirmModal.value = true }
 function askMarkAbsent(s) { confirmTarget.value = s; confirmAction.value = 'mark_absent'; showMarkAbsentModal.value = true }
-function askGenerateQr(s) { confirmTarget.value = s; qrValidityMinutes.value = 180; showQrModal.value = true }
+function askGenerateQr(s) { confirmTarget.value = s; qrValidityMinutes.value = 180; confirmGenerateQr(); }
 function askBulkAttendance(s) {
   confirmTarget.value = s
   bulkStatus.value = 'present'
@@ -1003,13 +1004,12 @@ onMounted(async () => {
           </div>
           <div class="modal-body" style="text-align:center">
             <div v-if="aStore.qrData.qr_code_data" class="qr-display">
-              <div class="qr-placeholder">
-                <div style="font-size:64px">📱</div>
-                <div style="font-size:14px;color:var(--text-muted);margin-top:8px">
-                  Scannez ce QR Code pour enregistrer votre présence
-                </div>
+              <div style="background:#fff; padding: 20px; border-radius: 16px; display: inline-block; border: 3px dashed var(--primary); margin-bottom: 16px;">
+                <qrcode-vue :value="aStore.qrData.qr_code_data" :size="240" level="M" />
               </div>
-              <textarea readonly style="width:100%;margin-top:16px;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:11px;font-family:monospace;height:80px;resize:none">{{ aStore.qrData.qr_code_data }}</textarea>
+              <div style="font-size:14px;color:var(--text-muted);">
+                Scannez ce QR Code avec l'application mobile pour enregistrer votre présence
+              </div>
             </div>
             <div class="qr-info">
               <div class="qr-info-row"><span>Session:</span><strong>{{ confirmTarget?.title }}</strong></div>

@@ -297,7 +297,7 @@ onMounted(async () => {
         <p class="page-subtitle">Planifiez, publiez et suivez toutes les activités de l'église</p>
       </div>
       <div class="page-header-actions">
-        <button class="btn-primary" @click="openCreate">➕ Nouvel événement</button>
+        <button class="sa-btn sa-btn-primary" @click="openCreate">➕ Nouvel événement</button>
       </div>
     </div>
 
@@ -595,86 +595,86 @@ onMounted(async () => {
           </div>
 
           <h4 class="form-section-title">Informations principales</h4>
-          <div class="form-row">
-            <div class="form-group" style="grid-column: span 4">
-              <label>Titre <span v-if="formErrors.title" class="err">{{ formErrors.title }}</span></label>
+          <div class="sa-form-grid">
+            <div class="sa-form-field sa-form-field-full">
+              <label>Titre <span v-if="formErrors.title" class="sa-error">{{ formErrors.title }}</span></label>
               <input v-model="eventForm.title" :class="{err: formErrors.title}" placeholder="Ex: Culte de Pâques 2026" />
             </div>
           </div>
-          <div class="form-row row-3">
-            <div class="form-group">
-              <label>Type d'événement <span v-if="formErrors.type" class="err">{{ formErrors.type }}</span></label>
+          <div class="sa-form-grid">
+            <div class="sa-form-field">
+              <label>Type d'événement <span v-if="formErrors.type" class="sa-error">{{ formErrors.type }}</span></label>
               <select v-model="eventForm.type" :class="{err: formErrors.type}">
                 <option v-for="t in typeOptions" :key="t.value" :value="t.value">{{ t.label }}</option>
               </select>
             </div>
-            <div class="form-group">
+            <div class="sa-form-field">
               <label>Statut</label>
               <select v-model="eventForm.status">
                 <option v-for="s in statusOptions" :key="s.value" :value="s.value">{{ s.label }}</option>
               </select>
             </div>
-            <div class="form-group">
-              <label>Date <span v-if="formErrors.event_date" class="err">{{ formErrors.event_date }}</span></label>
+            <div class="sa-form-field">
+              <label>Date <span v-if="formErrors.event_date" class="sa-error">{{ formErrors.event_date }}</span></label>
               <input type="date" v-model="eventForm.event_date" :class="{err: formErrors.event_date}" />
             </div>
           </div>
-          <div class="form-row row-3">
-            <div class="form-group">
-              <label>Heure début <span v-if="formErrors.start_time" class="err">{{ formErrors.start_time }}</span></label>
+          <div class="sa-form-grid">
+            <div class="sa-form-field">
+              <label>Heure début <span v-if="formErrors.start_time" class="sa-error">{{ formErrors.start_time }}</span></label>
               <input type="time" v-model="eventForm.start_time" :class="{err: formErrors.start_time}" />
             </div>
-            <div class="form-group">
+            <div class="sa-form-field">
               <label>Heure fin</label>
               <input type="time" v-model="eventForm.end_time" />
             </div>
-            <div class="form-group">
+            <div class="sa-form-field">
               <label>Participants max. (optionnel)</label>
               <input type="number" min="1" v-model="eventForm.max_attendees" placeholder="Illimité" />
             </div>
           </div>
 
           <h4 class="form-section-title">Lieu & contact</h4>
-          <div class="form-row">
-            <div class="form-group" style="grid-column: span 2">
+          <div class="sa-form-grid">
+            <div class="sa-form-field sa-form-field-full">
               <label>Nom du lieu</label>
               <input v-model="eventForm.location" placeholder="Église, salle, nom du lieu..." />
             </div>
-            <div class="form-group" style="grid-column: span 2">
+            <div class="sa-form-field sa-form-field-full">
               <label>Adresse complète</label>
               <input v-model="eventForm.address" placeholder="Rue, ville..." />
             </div>
           </div>
-          <div class="form-row">
-            <div class="form-group" style="grid-column: span 2">
+          <div class="sa-form-grid">
+            <div class="sa-form-field sa-form-field-full">
               <label>Organisateur</label>
               <input v-model="eventForm.organizer" placeholder="Nom de l'organisateur" />
             </div>
-            <div class="form-group">
-              <label>Email contact <span v-if="formErrors.contact_email" class="err">{{ formErrors.contact_email }}</span></label>
+            <div class="sa-form-field">
+              <label>Email contact <span v-if="formErrors.contact_email" class="sa-error">{{ formErrors.contact_email }}</span></label>
               <input v-model="eventForm.contact_email" :class="{err: formErrors.contact_email}" placeholder="contact@eglise.org" />
             </div>
-            <div class="form-group">
+            <div class="sa-form-field">
               <label>Téléphone</label>
               <input v-model="eventForm.contact_phone" placeholder="+228 00 00 00 00" />
             </div>
           </div>
 
           <h4 class="form-section-title">Contenu & image</h4>
-          <div class="form-row">
-            <div class="form-group" style="grid-column: span 4">
+          <div class="sa-form-grid">
+            <div class="sa-form-field sa-form-field-full">
               <label>URL de l'affiche / image</label>
               <input v-model="eventForm.image_path" placeholder="https://... ou /storage/affiche.jpg" />
             </div>
           </div>
-          <div class="form-row">
-            <div class="form-group" style="grid-column: span 4">
+          <div class="sa-form-grid">
+            <div class="sa-form-field sa-form-field-full">
               <label>Description</label>
               <textarea rows="3" v-model="eventForm.description" placeholder="Décrivez l'événement..."></textarea>
             </div>
           </div>
-          <div class="form-row">
-            <div class="form-group" style="grid-column: span 4">
+          <div class="sa-form-grid">
+            <div class="sa-form-field sa-form-field-full">
               <label>Notes internes (non publiées)</label>
               <textarea rows="2" v-model="eventForm.notes" placeholder="Notes privées pour l'équipe..."></textarea>
             </div>
@@ -692,8 +692,8 @@ onMounted(async () => {
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn-secondary" @click="showEventModal = false">Annuler</button>
-          <button class="btn-primary" @click="submitForm" :disabled="eStore.saving">
+          <button class="sa-btn sa-btn-secondary" @click="showEventModal = false">Annuler</button>
+          <button class="sa-btn sa-btn-primary" @click="submitForm" :disabled="eStore.saving">
             {{ eStore.saving ? '⏳ Enregistrement...' : (isEditing ? '💾 Enregistrer' : '✅ Créer l\'événement') }}
           </button>
         </div>
@@ -702,7 +702,7 @@ onMounted(async () => {
 
     <!-- Modal : Confirmation -->
     <div v-if="showConfirmModal" class="modal-backdrop" @click.self="showConfirmModal = false">
-      <div class="modal-dialog confirm-dialog">
+      <div class="modal-dialog modal-dialog-sm">
         <div class="modal-body" style="padding:28px 24px">
           <div :class="['confirm-icon', confirmType]">
             {{ confirmType === 'danger' ? '🗑️' : confirmType === 'success' ? '✅' : '⚠️' }}
@@ -711,7 +711,7 @@ onMounted(async () => {
           <p class="confirm-text">{{ confirmMsg }}</p>
         </div>
         <div class="modal-footer justify-center">
-          <button class="btn-secondary" @click="showConfirmModal = false">Annuler</button>
+          <button class="sa-btn sa-btn-secondary" @click="showConfirmModal = false">Annuler</button>
           <button :class="confirmType === 'danger' ? 'btn-danger' : 'btn-primary'" @click="confirmActionFn" :disabled="eStore.deleting">
             Confirmer
           </button>
@@ -742,40 +742,40 @@ onMounted(async () => {
             <span v-if="detailEvent.is_past" class="status-badge">Passé</span>
             <span v-if="detailEvent.is_featured" class="role-badge super">⭐ À la une</span>
           </div>
-          <div class="form-row row-3">
-            <div class="form-group">
+          <div class="sa-form-grid">
+            <div class="sa-form-field">
               <label>📅 Date</label>
               <div style="padding:9px 12px;background:#f8fafc;border-radius:8px;font-weight:600;color:#111827">{{ detailEvent.formatted_date || detailEvent.event_date }}</div>
             </div>
-            <div class="form-group">
+            <div class="sa-form-field">
               <label>🕐 Horaires</label>
               <div style="padding:9px 12px;background:#f8fafc;border-radius:8px;font-weight:600;color:#111827">{{ detailEvent.formatted_time || (detailEvent.start_time + (detailEvent.end_time ? ' - ' + detailEvent.end_time : '')) }}</div>
             </div>
-            <div class="form-group">
+            <div class="sa-form-field">
               <label>👥 Capacité</label>
               <div style="padding:9px 12px;background:#f8fafc;border-radius:8px;font-weight:600;color:#111827">{{ detailEvent.max_attendees ? (detailEvent.max_attendees + ' pers.') : 'Illimitée' }}</div>
             </div>
           </div>
-          <div v-if="detailEvent.location || detailEvent.address" class="form-row">
-            <div v-if="detailEvent.location" class="form-group">
+          <div v-if="detailEvent.location || detailEvent.address" class="sa-form-grid">
+            <div v-if="detailEvent.location" class="sa-form-field">
               <label>📍 Lieu</label>
               <div style="padding:9px 12px;background:#f8fafc;border-radius:8px;font-weight:600;color:#111827">{{ detailEvent.location }}</div>
             </div>
-            <div v-if="detailEvent.address" class="form-group">
+            <div v-if="detailEvent.address" class="sa-form-field">
               <label>🏠 Adresse</label>
               <div style="padding:9px 12px;background:#f8fafc;border-radius:8px;font-weight:600;color:#111827">{{ detailEvent.address }}</div>
             </div>
           </div>
-          <div v-if="detailEvent.organizer || detailEvent.contact_email || detailEvent.contact_phone" class="form-row row-3">
-            <div v-if="detailEvent.organizer" class="form-group">
+          <div v-if="detailEvent.organizer || detailEvent.contact_email || detailEvent.contact_phone" class="sa-form-grid">
+            <div v-if="detailEvent.organizer" class="sa-form-field">
               <label>👤 Organisateur</label>
               <div style="padding:9px 12px;background:#f8fafc;border-radius:8px;font-weight:600;color:#111827">{{ detailEvent.organizer }}</div>
             </div>
-            <div v-if="detailEvent.contact_email" class="form-group">
+            <div v-if="detailEvent.contact_email" class="sa-form-field">
               <label>✉️ Email</label>
               <div style="padding:9px 12px;background:#f8fafc;border-radius:8px;font-weight:600;color:#111827;overflow:hidden;text-overflow:ellipsis">{{ detailEvent.contact_email }}</div>
             </div>
-            <div v-if="detailEvent.contact_phone" class="form-group">
+            <div v-if="detailEvent.contact_phone" class="sa-form-field">
               <label>📞 Téléphone</label>
               <div style="padding:9px 12px;background:#f8fafc;border-radius:8px;font-weight:600;color:#111827">{{ detailEvent.contact_phone }}</div>
             </div>
@@ -793,16 +793,16 @@ onMounted(async () => {
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn-secondary" @click="showDetailModal = false">Fermer</button>
+          <button class="sa-btn sa-btn-secondary" @click="showDetailModal = false">Fermer</button>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <template v-if="detailEvent.status === 'draft'">
-              <button class="btn-primary" @click="askPublish(detailEvent); showDetailModal=false">📢 Publier</button>
+              <button class="sa-btn sa-btn-primary" @click="askPublish(detailEvent); showDetailModal=false">📢 Publier</button>
             </template>
             <template v-else-if="detailEvent.status === 'published'">
-              <button class="btn-secondary" @click="askComplete(detailEvent); showDetailModal=false">✅ Terminé</button>
-              <button class="btn-secondary" style="color:#b91c1c;border-color:#fecaca;background:#fef2f2" @click="askCancelEvent(detailEvent); showDetailModal=false">❌ Annuler</button>
+              <button class="sa-btn sa-btn-secondary" @click="askComplete(detailEvent); showDetailModal=false">✅ Terminé</button>
+              <button class="sa-btn sa-btn-secondary" style="color:#b91c1c;border-color:#fecaca;background:#fef2f2" @click="askCancelEvent(detailEvent); showDetailModal=false">❌ Annuler</button>
             </template>
-            <button class="btn-primary" @click="openEdit(detailEvent); showDetailModal=false">✏️ Modifier</button>
+            <button class="sa-btn sa-btn-primary" @click="openEdit(detailEvent); showDetailModal=false">✏️ Modifier</button>
           </div>
         </div>
       </div>
@@ -820,4 +820,33 @@ onMounted(async () => {
 @media (max-width: 560px) {
   .sa-stats-grid { grid-template-columns: 1fr !important; }
 }
+
+.sa-btn { display:inline-flex;align-items:center;gap:6px;padding:10px 16px;border-radius:10px;font-weight:600;font-size:13px;border:1px solid transparent;cursor:pointer;transition:all .12s;white-space:nowrap; }
+.sa-btn-primary { background:linear-gradient(135deg,#10b981,#059669);color:#fff;box-shadow:0 6px 16px rgba(16,185,129,0.25); }
+.sa-btn-primary:hover { filter:brightness(1.04);transform:translateY(-1px); }
+.sa-btn-primary:disabled { opacity:.6;cursor:not-allowed; }
+.sa-btn-secondary { background:#fff;color:#111827;border-color:#e5e7eb; }
+.sa-btn-secondary:hover { background:#f9fafb;border-color:#d1d5db; }
+.sa-btn-danger { background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff; }
+
+.sa-form-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px; }
+.sa-form-field { display:flex;flex-direction:column;gap:6px; }
+.sa-form-field-full { grid-column:1 / -1; }
+.sa-form-field label { font-size:13px;font-weight:600;color:#111827; }
+.sa-form-field input, .sa-form-field select, .sa-form-field textarea { padding:10px 12px;border-radius:10px;border:1px solid #d1d5db;font-size:13.5px;background:#fff;outline:none;transition:border-color .12s; }
+.sa-form-field input:focus, .sa-form-field select:focus, .sa-form-field textarea:focus { border-color:#10b981;box-shadow:0 0 0 3px rgba(16,185,129,0.15); }
+.sa-form-field input.err, .sa-form-field select.err, .sa-form-field textarea.err { border-color: #b91c1c; background: #fef2f2; }
+.sa-error { color:#b91c1c;font-size:12px;font-weight:600; margin-left: 6px; }
+
+.modal-backdrop { position:fixed;inset:0;background:rgba(17,24,39,0.55);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(3px); }
+.modal-dialog { background:#fff;border-radius:18px;width:min(720px, 100%);max-height:92vh;overflow:auto;box-shadow:0 30px 80px rgba(0,0,0,0.3);display:flex;flex-direction:column; }
+.modal-dialog-sm { width:min(460px,100%); }
+.modal-header { display:flex;justify-content:space-between;align-items:center;padding:18px 22px;border-bottom:1px solid #f3f4f6; }
+.modal-header h3 { margin:0;font-size:17px; }
+.modal-close { border:none;background:none;font-size:24px;cursor:pointer;color:#6b7280;width:34px;height:34px;border-radius:8px; }
+.modal-close:hover { background:#f3f4f6; }
+.modal-body { padding:20px 22px; }
+.modal-body p { margin:4px 0;font-size:14px; }
+.modal-footer { display:flex;justify-content:flex-end;gap:10px;padding:14px 22px;border-top:1px solid #f3f4f6;background:#fafafa;border-radius:0 0 18px 18px; }
+
 </style>

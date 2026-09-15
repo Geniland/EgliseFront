@@ -11,7 +11,6 @@ const accountTypeFilter = ref('')
 const accountPage = ref(1)
 const accountPerPage = ref(20)
 
-const catTypeFilter = ref('income')
 const catSearch = ref('')
 const catStatusFilter = ref('')
 const catPage = ref(1)
@@ -78,9 +77,62 @@ const currencyOpts = computed(() => Object.entries(fStore.referential.currencies
 const txTypeOpts = computed(() => Object.entries(fStore.referential.transaction_types || { income: 'Recette', expense: 'Dépense', transfer: 'Transfert' }).map(([v,l])=>({value:v,label:l})))
 const txStatusOpts = computed(() => Object.entries(fStore.referential.transaction_statuses || {}).map(([v,l])=>({value:v,label:l})))
 const pmOpts = computed(() => Object.entries(fStore.referential.payment_methods || {}).map(([v,l])=>({value:v,label:l})))
-const txIncomeCats = computed(() => fStore.categoriesAllActive.income || [])
-const txExpenseCats = computed(() => fStore.categoriesAllActive.expense || [])
-const activeAccounts = computed(() => fStore.accountsAllActive || [])
+const txIncomeCats = computed(() => {
+  const fromRef = fStore.categoriesAllActive?.income
+  if (Array.isArray(fromRef) && fromRef.length > 0) {
+    return fromRef
+  }
+  if (Array.isArray(fStore.categories) && fStore.categories.length > 0) {
+    const list = []
+    fStore.categories.filter(c => c.type === 'income' && (c.status === undefined || c.status)).forEach(c => {
+      list.push(c)
+      if (Array.isArray(c.children)) {
+        c.children.forEach(ch => {
+          if (!list.some(x => x.id === ch.id)) list.push(ch)
+        })
+      }
+    })
+    return list
+  }
+  return []
+})
+
+const txExpenseCats = computed(() => {
+  const fromRef = fStore.categoriesAllActive?.expense
+  if (Array.isArray(fromRef) && fromRef.length > 0) {
+    return fromRef
+  }
+  if (Array.isArray(fStore.categories) && fStore.categories.length > 0) {
+    const list = []
+    fStore.categories.filter(c => c.type === 'expense' && (c.status === undefined || c.status)).forEach(c => {
+      list.push(c)
+      if (Array.isArray(c.children)) {
+        c.children.forEach(ch => {
+          if (!list.some(x => x.id === ch.id)) list.push(ch)
+        })
+      }
+    })
+    return list
+  }
+  return []
+})
+
+const activeAccounts = computed(() => {
+  if (Array.isArray(fStore.accountsAllActive) && fStore.accountsAllActive.length > 0) {
+    return fStore.accountsAllActive
+  }
+  if (Array.isArray(fStore.accounts) && fStore.accounts.length > 0) {
+    return fStore.accounts.filter(a => a.status === undefined || a.status)
+  }
+  return []
+})
+
+watch(() => transactionForm.type, (newType) => {
+  const currentList = newType === 'income' ? txIncomeCats.value : txExpenseCats.value
+  if (transactionForm.category_id && !currentList.some(c => c.id === transactionForm.category_id)) {
+    transactionForm.category_id = null
+  }
+})
 
 function typeBadgeClass(type) {
   if (type === 'income') return 'role-badge super'
@@ -127,7 +179,6 @@ async function loadAccounts() {
 async function loadCategories() {
   await fStore.loadCategories({
     search: catSearch.value || undefined,
-    type: catTypeFilter.value || undefined,
     status: catStatusFilter.value || undefined,
     page: catPage.value, per_page: catPerPage.value,
     with_children: true,
@@ -157,7 +208,7 @@ const dCat = debounce(() => { catPage.value = 1; loadCategories() })
 const dTx = debounce(() => { txPage.value = 1; loadTransactions() })
 
 watch(accountSearch, dAcc); watch(accountStatusFilter, dAcc); watch(accountTypeFilter, dAcc); watch(accountPage, loadAccounts); watch(accountPerPage, dAcc)
-watch(catSearch, dCat); watch(catTypeFilter, dCat); watch(catStatusFilter, dCat); watch(catPage, loadCategories)
+watch(catSearch, dCat); watch(catStatusFilter, dCat); watch(catPage, loadCategories)
 watch(txSearch, dTx); watch(txAccountFilter, dTx); watch(txCategoryFilter, dTx); watch(txTypeFilter, dTx); watch(txStatusFilter, dTx); watch(txDateFrom, dTx); watch(txDateTo, dTx); watch(txPage, loadTransactions); watch(txPerPage, dTx)
 
 // ————— Forms —————
@@ -196,23 +247,45 @@ function openEditAccount(a) {
   accountForm.description = a.description || ''
   showAccountModal.value=true
 }
-function openCreateCategory() { resetCatForm(); formAlert.type=''; formAlert.message=''; showCategoryModal.value=true }
+function openCreateCategory(type = 'income') { resetCatForm(); categoryForm.type = type; formAlert.type=''; formAlert.message=''; showCategoryModal.value=true }
 function openEditCategory(c) {
   resetCatForm(); formAlert.type=''; formAlert.message=''
   categoryForm.id = c.id; categoryForm.name=c.name; categoryForm.type=c.type
   categoryForm.parent_id = c.parent_id || null; categoryForm.description = c.description || ''
   showCategoryModal.value=true
 }
-function openCreateTx() { resetTxForm(); formAlert.type=''; formAlert.message=''; showTransactionModal.value=true }
-function openEditTx(tx) {
-  if (!tx.can_be_edited) return
-  resetTxForm(); formAlert.type=''; formAlert.message=''
-  transactionForm.id = tx.id; transactionForm.type = tx.type
-  transactionForm.account_id = tx.account_id; transactionForm.category_id = tx.category_id || null
-  transactionForm.amount = tx.amount; transactionForm.transaction_date = tx.transaction_date
-  transactionForm.payment_method = tx.payment_method || 'cash'
-  transactionForm.reference = tx.reference || ''; transactionForm.description = tx.description || ''
+async function openCreateTx() {
+  resetTxForm()
+  formAlert.type = ''
+  formAlert.message = ''
   showTransactionModal.value = true
+  await Promise.all([
+    fStore.loadReferentials(),
+    fStore.loadAllActiveCategories(),
+    fStore.loadAllActiveAccounts(),
+    !fStore.categories?.length ? fStore.loadCategories({ per_page: 100, with_children: true }) : Promise.resolve(),
+  ])
+}
+async function openEditTx(tx) {
+  if (!tx.can_be_edited) return
+  resetTxForm()
+  formAlert.type = ''
+  formAlert.message = ''
+  transactionForm.id = tx.id
+  transactionForm.type = tx.type
+  transactionForm.account_id = tx.account_id
+  transactionForm.category_id = tx.category_id || null
+  transactionForm.amount = tx.amount
+  transactionForm.transaction_date = tx.transaction_date
+  transactionForm.payment_method = tx.payment_method || 'cash'
+  transactionForm.reference = tx.reference || ''
+  transactionForm.description = tx.description || ''
+  showTransactionModal.value = true
+  await Promise.all([
+    fStore.loadReferentials(),
+    fStore.loadAllActiveCategories(),
+    fStore.loadAllActiveAccounts(),
+  ])
 }
 function openTransfer() { resetTransferForm(); formAlert.type=''; formAlert.message=''; showTransferModal.value=true }
 function openApprove(tx) { approveTarget.value = tx; approveComment.value=''; showApproveModal.value=true }
@@ -220,7 +293,13 @@ function openReject(tx) { rejectTarget.value = tx; rejectReason.value=''; showRe
 async function openDetail(tx) {
   detailTx.value = tx
   showDetailModal.value = true
-  await fStore.loadAttachments(tx.id)
+  const [freshTx] = await Promise.all([
+    fStore.loadTransactionDetail(tx.id),
+    fStore.loadAttachments(tx.id),
+  ])
+  if (freshTx) {
+    detailTx.value = freshTx
+  }
 }
 async function openAttach(tx) {
   attachTx.value = tx
@@ -320,7 +399,12 @@ async function submitTransfer() {
 
 async function confirmAccToggle(a) {
   const r = await fStore.toggleAccountStatus(a.id)
-  if (r.ok) await Promise.all([loadAccounts(), loadDashboard(), loadStats()])
+  if (r.ok) await Promise.all([loadAccounts(), loadDashboard(), loadStats(), fStore.loadReferentials()])
+  else { formAlert.type='danger'; formAlert.message = r.message }
+}
+async function confirmCatToggle(c) {
+  const r = await fStore.toggleCategoryStatus(c.id)
+  if (r.ok) await Promise.all([loadCategories(), fStore.loadReferentials()])
   else { formAlert.type='danger'; formAlert.message = r.message }
 }
 function askDeleteAccount(a) {
@@ -362,7 +446,7 @@ async function confirmActionFn() {
   else if (confirmAction.value === 'delete_att') r = await fStore.deleteAttachment(confirmTarget.value.id)
   if (r?.ok) {
     showConfirmModal.value = false
-    await Promise.all([loadAccounts(), loadCategories(), loadTransactions(), loadDashboard(), loadStats()])
+    await Promise.all([loadAccounts(), loadCategories(), loadTransactions(), loadDashboard(), loadStats(), fStore.loadReferentials()])
     if (detailTx.value) await fStore.loadAttachments(detailTx.value.id)
     if (attachTx.value) await fStore.loadAttachments(attachTx.value.id)
   } else if (r) {
@@ -442,8 +526,8 @@ onMounted(async () => {
         <p class="page-subtitle">Comptes, catégories, recettes, dépenses, transferts et approbation</p>
       </div>
       <div class="page-header-actions">
-        <button class="btn-primary" @click="openCreateTx" style="margin-right:8px">➕ Nouvelle transaction</button>
-        <button class="btn-primary" @click="openTransfer" style="background:linear-gradient(135deg,#8b5cf6,#6366f1)">↔️ Transfert</button>
+        <button class="sa-btn sa-btn-primary" @click="openCreateTx" style="margin-right:8px">➕ Nouvelle transaction</button>
+        <button class="sa-btn sa-btn-primary" @click="openTransfer" style="background:linear-gradient(135deg,#8b5cf6,#6366f1)">↔️ Transfert</button>
       </div>
     </div>
 
@@ -594,21 +678,21 @@ onMounted(async () => {
     <div v-if="activeTab==='accounts'">
       <div class="sa-table-wrap" style="padding:18px">
         <div class="sa-user-cell" style="gap:10px;flex-wrap:wrap;margin-bottom:14px">
-          <input v-model="accountSearch" placeholder="🔍 Rechercher compte..." class="input" style="max-width:240px" />
-          <select v-model="accountTypeFilter" class="input" style="max-width:150px">
+          <input v-model="accountSearch" placeholder="🔍 Rechercher compte..."  style="max-width:240px" />
+          <select v-model="accountTypeFilter"  style="max-width:150px">
             <option value="">Tous types</option>
             <option v-for="o in accountTypeOpts" :key="o.value" :value="o.value">{{ o.label }}</option>
           </select>
-          <select v-model="accountStatusFilter" class="input" style="max-width:150px">
+          <select v-model="accountStatusFilter"  style="max-width:150px">
             <option value="">Tous statuts</option>
             <option value="active">Actif</option>
             <option value="inactive">Inactif</option>
           </select>
-          <select v-model="accountPerPage" class="input" style="max-width:120px">
+          <select v-model="accountPerPage"  style="max-width:120px">
             <option :value="20">20 / page</option><option :value="50">50 / page</option><option :value="100">100 / page</option>
           </select>
           <div style="flex:1"></div>
-          <button class="btn-primary" @click="openCreateAccount">➕ Nouveau compte</button>
+          <button class="sa-btn sa-btn-primary" @click="openCreateAccount">➕ Nouveau compte</button>
         </div>
 
         <div style="overflow:auto">
@@ -639,9 +723,9 @@ onMounted(async () => {
         <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;gap:10px;flex-wrap:wrap">
           <div style="font-size:12px;color:#6b7280">Page {{ fStore.accountsPagination.current_page }} / {{ fStore.accountsPagination.last_page || 1 }} · Total {{ fStore.accountsPagination.total }}</div>
           <div v-if="(fStore.accountsPagination.last_page||1) > 1" style="display:flex;gap:6px;flex-wrap:wrap">
-            <button class="btn-ghost" :disabled="fStore.accountsPagination.current_page<=1" @click="accountPage--">‹ Précédent</button>
+            <button class="sa-btn sa-btn-secondary" :disabled="fStore.accountsPagination.current_page<=1" @click="accountPage--">‹ Précédent</button>
             <button v-for="p in pagesToShow(fStore.accountsPagination.current_page, fStore.accountsPagination.last_page||1)" :key="p" :class="['btn-page', p===fStore.accountsPagination.current_page?'active':'']" :disabled="p==='...'" @click="accountPage=p">{{ p }}</button>
-            <button class="btn-ghost" :disabled="fStore.accountsPagination.current_page>=(fStore.accountsPagination.last_page||1)" @click="accountPage++">Suivant ›</button>
+            <button class="sa-btn sa-btn-secondary" :disabled="fStore.accountsPagination.current_page>=(fStore.accountsPagination.last_page||1)" @click="accountPage++">Suivant ›</button>
           </div>
         </div>
       </div>
@@ -654,18 +738,18 @@ onMounted(async () => {
           <div class="sa-user-cell" style="gap:10px;flex-wrap:wrap;margin-bottom:14px">
             <h3 style="margin:0;font-size:15px;color:#10b981">📥 Recettes</h3>
             <div style="flex:1"></div>
-            <select v-model="catStatusFilter" class="input" style="max-width:130px">
+            <select v-model="catStatusFilter"  style="max-width:130px">
               <option value="">Tous statuts</option>
               <option value="active">Actif</option>
               <option value="inactive">Inactif</option>
             </select>
-            <button class="btn-primary" style="background:linear-gradient(135deg,#10b981,#059669)" @click="catTypeFilter='income';openCreateCategory()">➕ Catégorie</button>
+            <button class="sa-btn sa-btn-primary" style="background:linear-gradient(135deg,#10b981,#059669)" @click="openCreateCategory('income')">➕ Catégorie</button>
           </div>
           <div style="overflow:auto;max-height:460px">
             <table class="sa-table">
               <thead><tr><th>Nom</th><th style="width:80px">Statut</th><th style="width:140px">Actions</th></tr></thead>
               <tbody>
-                <template v-for="c in (txIncomeCats || fStore.categories.filter(x=>x.type==='income'))" :key="'in'+c.id">
+                <template v-for="c in fStore.categories.filter(x=>x.type==='income')" :key="'in'+c.id">
                   <tr>
                     <td style="font-weight:600;padding-left:14px">{{ c.full_path_label || c.name }}
                       <div v-if="c.description" style="font-size:11px;color:#6b7280;font-weight:400">{{ c.description }}</div>
@@ -673,7 +757,7 @@ onMounted(async () => {
                     <td><span :class="accountStatusBadge(c.status)" style="font-size:10px;padding:3px 8px">{{ c.status?'Actif':'Inactif' }}</span></td>
                     <td><div class="row-actions">
                       <button class="btn-icon edit" title="Modifier" @click="openEditCategory(c)">✏️</button>
-                      <button class="btn-icon status" title="Toggle" @click="fStore.toggleCategoryStatus(c.id).then(()=>loadCategories()).then(fStore.loadReferentials)">🔄</button>
+                      <button class="btn-icon status" title="Activer/Désactiver" @click="confirmCatToggle(c)">🔄</button>
                       <button class="btn-icon delete" title="Supprimer" @click="askDeleteCategory(c)">🗑️</button>
                     </div></td>
                   </tr>
@@ -682,6 +766,7 @@ onMounted(async () => {
                     <td><span :class="accountStatusBadge(child.status)" style="font-size:10px;padding:3px 8px">{{ child.status?'Actif':'Inactif' }}</span></td>
                     <td><div class="row-actions">
                       <button class="btn-icon edit" title="Modifier" @click="openEditCategory(child)">✏️</button>
+                      <button class="btn-icon status" title="Activer/Désactiver" @click="confirmCatToggle(child)">🔄</button>
                       <button class="btn-icon delete" title="Supprimer" @click="askDeleteCategory(child)">🗑️</button>
                     </div></td>
                   </tr>
@@ -695,18 +780,18 @@ onMounted(async () => {
           <div class="sa-user-cell" style="gap:10px;flex-wrap:wrap;margin-bottom:14px">
             <h3 style="margin:0;font-size:15px;color:#ef4444">📤 Dépenses</h3>
             <div style="flex:1"></div>
-            <select v-model="catStatusFilter" class="input" style="max-width:130px">
+            <select v-model="catStatusFilter"  style="max-width:130px">
               <option value="">Tous statuts</option>
               <option value="active">Actif</option>
               <option value="inactive">Inactif</option>
             </select>
-            <button class="btn-primary" style="background:linear-gradient(135deg,#ef4444,#dc2626)" @click="catTypeFilter='expense';openCreateCategory()">➕ Catégorie</button>
+            <button class="sa-btn sa-btn-primary" style="background:linear-gradient(135deg,#ef4444,#dc2626)" @click="openCreateCategory('expense')">➕ Catégorie</button>
           </div>
           <div style="overflow:auto;max-height:460px">
             <table class="sa-table">
               <thead><tr><th>Nom</th><th style="width:80px">Statut</th><th style="width:140px">Actions</th></tr></thead>
               <tbody>
-                <template v-for="c in (txExpenseCats || fStore.categories.filter(x=>x.type==='expense'))" :key="'ex'+c.id">
+                <template v-for="c in fStore.categories.filter(x=>x.type==='expense')" :key="'ex'+c.id">
                   <tr>
                     <td style="font-weight:600;padding-left:14px">{{ c.full_path_label || c.name }}
                       <div v-if="c.description" style="font-size:11px;color:#6b7280;font-weight:400">{{ c.description }}</div>
@@ -714,7 +799,7 @@ onMounted(async () => {
                     <td><span :class="accountStatusBadge(c.status)" style="font-size:10px;padding:3px 8px">{{ c.status?'Actif':'Inactif' }}</span></td>
                     <td><div class="row-actions">
                       <button class="btn-icon edit" title="Modifier" @click="openEditCategory(c)">✏️</button>
-                      <button class="btn-icon status" title="Toggle" @click="fStore.toggleCategoryStatus(c.id).then(()=>loadCategories()).then(fStore.loadReferentials)">🔄</button>
+                      <button class="btn-icon status" title="Activer/Désactiver" @click="confirmCatToggle(c)">🔄</button>
                       <button class="btn-icon delete" title="Supprimer" @click="askDeleteCategory(c)">🗑️</button>
                     </div></td>
                   </tr>
@@ -723,6 +808,7 @@ onMounted(async () => {
                     <td><span :class="accountStatusBadge(child.status)" style="font-size:10px;padding:3px 8px">{{ child.status?'Actif':'Inactif' }}</span></td>
                     <td><div class="row-actions">
                       <button class="btn-icon edit" title="Modifier" @click="openEditCategory(child)">✏️</button>
+                      <button class="btn-icon status" title="Activer/Désactiver" @click="confirmCatToggle(child)">🔄</button>
                       <button class="btn-icon delete" title="Supprimer" @click="askDeleteCategory(child)">🗑️</button>
                     </div></td>
                   </tr>
@@ -738,32 +824,32 @@ onMounted(async () => {
     <div v-if="activeTab==='transactions' || activeTab==='waiting'">
       <div class="sa-table-wrap" style="padding:18px">
         <div class="sa-user-cell" style="gap:10px;flex-wrap:wrap;margin-bottom:14px">
-          <input v-model="txSearch" placeholder="🔍 Code/référence/description..." class="input" style="max-width:260px" />
-          <select v-model="txAccountFilter" class="input" style="max-width:200px">
+          <input v-model="txSearch" placeholder="🔍 Code/référence/description..."  style="max-width:260px" />
+          <select v-model="txAccountFilter"  style="max-width:200px">
             <option value="">Tous les comptes</option>
             <option v-for="a in activeAccounts" :key="'accf'+a.id" :value="a.id">{{ a.name }} ({{ a.formatted_current_balance }})</option>
           </select>
-          <select v-model="txCategoryFilter" class="input" style="max-width:180px">
+          <select v-model="txCategoryFilter"  style="max-width:180px">
             <option value="">Toutes catégories</option>
             <optgroup label="Recettes"><option v-for="c in txIncomeCats" :key="'inci'+c.id" :value="c.id">{{ c.name }}</option></optgroup>
             <optgroup label="Dépenses"><option v-for="c in txExpenseCats" :key="'exci'+c.id" :value="c.id">{{ c.name }}</option></optgroup>
           </select>
-          <select v-model="txTypeFilter" class="input" style="max-width:140px">
+          <select v-model="txTypeFilter"  style="max-width:140px">
             <option value="">Tous types</option>
             <option v-for="o in txTypeOpts" :key="o.value" :value="o.value">{{ o.label }}</option>
           </select>
-          <select v-if="activeTab==='transactions'" v-model="txStatusFilter" class="input" style="max-width:140px">
+          <select v-if="activeTab==='transactions'" v-model="txStatusFilter"  style="max-width:140px">
             <option value="">Tous statuts</option>
             <option v-for="o in txStatusOpts" :key="o.value" :value="o.value">{{ o.label }}</option>
           </select>
-          <input v-model="txDateFrom" type="date" class="input" style="max-width:140px" />
-          <input v-model="txDateTo" type="date" class="input" style="max-width:140px" />
-          <select v-model="txPerPage" class="input" style="max-width:120px">
+          <input v-model="txDateFrom" type="date"  style="max-width:140px" />
+          <input v-model="txDateTo" type="date"  style="max-width:140px" />
+          <select v-model="txPerPage"  style="max-width:120px">
             <option :value="30">30 / p.</option><option :value="60">60 / p.</option><option :value="100">100 / p.</option>
           </select>
           <div style="flex:1"></div>
-          <button class="btn-primary" style="margin-right:6px" @click="openCreateTx">➕ Nouveau</button>
-          <button class="btn-primary" style="background:linear-gradient(135deg,#8b5cf6,#6366f1)" @click="openTransfer">↔️ Transfert</button>
+          <button class="sa-btn sa-btn-primary" style="margin-right:6px" @click="openCreateTx">➕ Nouveau</button>
+          <button class="sa-btn sa-btn-primary" style="background:linear-gradient(135deg,#8b5cf6,#6366f1)" @click="openTransfer">↔️ Transfert</button>
         </div>
 
         <div style="overflow:auto">
@@ -788,7 +874,12 @@ onMounted(async () => {
                 </td>
                 <td style="font-size:12px;color:#6b7280">{{ tx.reference || '-' }}</td>
                 <td style="text-align:right;font-weight:800;white-space:nowrap" :style="{color:dirColor(tx)}">{{ tx.formatted_signed_amount }}</td>
-                <td><span :class="txStatusBadge(tx.status)" style="font-size:10px;padding:3px 8px">{{ tx.status_label }}</span></td>
+                <td>
+                  <span :class="txStatusBadge(tx.status)" style="font-size:10px;padding:3px 8px">{{ tx.status_label }}</span>
+                  <div v-if="tx.status === 'approved' && tx.approver" style="font-size:10px;color:#059669;margin-top:3px;font-weight:600;white-space:nowrap" title="Approuvé par">
+                    👤 {{ tx.approver.name }}
+                  </div>
+                </td>
                 <td><div class="row-actions">
                   <button class="btn-icon view" title="Détails" @click="openDetail(tx)">👁️</button>
                   <button class="btn-icon attach" title="Pièces jointes" @click="openAttach(tx)">📎</button>
@@ -807,9 +898,9 @@ onMounted(async () => {
         <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;gap:10px;flex-wrap:wrap">
           <div style="font-size:12px;color:#6b7280">Page {{ fStore.transactionsPagination.current_page }} / {{ fStore.transactionsPagination.last_page || 1 }} · Total {{ fStore.transactionsPagination.total }}</div>
           <div v-if="(fStore.transactionsPagination.last_page||1) > 1" style="display:flex;gap:6px;flex-wrap:wrap">
-            <button class="btn-ghost" :disabled="fStore.transactionsPagination.current_page<=1" @click="txPage--">‹ Précédent</button>
+            <button class="sa-btn sa-btn-secondary" :disabled="fStore.transactionsPagination.current_page<=1" @click="txPage--">‹ Précédent</button>
             <button v-for="p in pagesToShow(fStore.transactionsPagination.current_page, fStore.transactionsPagination.last_page||1)" :key="p" :class="['btn-page', p===fStore.transactionsPagination.current_page?'active':'']" :disabled="p==='...'" @click="txPage=p">{{ p }}</button>
-            <button class="btn-ghost" :disabled="fStore.transactionsPagination.current_page>=(fStore.transactionsPagination.last_page||1)" @click="txPage++">Suivant ›</button>
+            <button class="sa-btn sa-btn-secondary" :disabled="fStore.transactionsPagination.current_page>=(fStore.transactionsPagination.last_page||1)" @click="txPage++">Suivant ›</button>
           </div>
         </div>
       </div>
@@ -820,44 +911,44 @@ onMounted(async () => {
       <div class="modal-dialog">
         <div class="modal-header">
           <h3>{{ accountEditing ? 'Modifier le compte' : 'Nouveau compte' }}</h3>
-          <button class="btn-icon close" @click="showAccountModal=false">✕</button>
+          <button class="modal-close" @click="showAccountModal=false">✕</button>
         </div>
         <div class="modal-body">
-          <div class="form-row row-3">
-            <div class="form-group">
-              <label class="label">Nom du compte *</label>
-              <input v-model="accountForm.name" :class="['input', formErrors.name?'err':'']" placeholder="Ex: Caisse du culte" />
-              <div v-if="formErrors.name" class="err-msg">{{ formErrors.name }}</div>
+          <div class="sa-form-grid">
+            <div class="sa-form-field">
+              <label >Nom du compte *</label>
+              <input v-model="accountForm.name"  placeholder="Ex: Caisse du culte" />
+              <div v-if="formErrors.name" class="sa-error">{{ formErrors.name }}</div>
             </div>
-            <div class="form-group">
-              <label class="label">Type *</label>
-              <select v-model="accountForm.type" :class="['input', formErrors.type?'err':'']">
+            <div class="sa-form-field">
+              <label >Type *</label>
+              <select v-model="accountForm.type" >
                 <option v-for="o in accountTypeOpts" :key="o.value" :value="o.value">{{ o.label }}</option>
               </select>
-              <div v-if="formErrors.type" class="err-msg">{{ formErrors.type }}</div>
+              <div v-if="formErrors.type" class="sa-error">{{ formErrors.type }}</div>
             </div>
-            <div class="form-group">
-              <label class="label">Devise</label>
-              <select v-model="accountForm.currency" class="input">
+            <div class="sa-form-field">
+              <label >Devise</label>
+              <select v-model="accountForm.currency" >
                 <option v-for="o in currencyOpts" :key="o.value" :value="o.value">{{ o.label }}</option>
               </select>
             </div>
           </div>
-          <div class="form-row row-3">
-            <div class="form-group">
-              <label class="label">Solde initial</label>
-              <input type="number" step="0.01" v-model.number="accountForm.initial_balance" :class="['input', formErrors.initial_balance?'err':'']" />
-              <div v-if="formErrors.initial_balance" class="err-msg">{{ formErrors.initial_balance }}</div>
+          <div class="sa-form-grid">
+            <div class="sa-form-field">
+              <label >Solde initial</label>
+              <input type="number" step="0.01" v-model.number="accountForm.initial_balance"  />
+              <div v-if="formErrors.initial_balance" class="sa-error">{{ formErrors.initial_balance }}</div>
             </div>
-            <div class="form-group" style="grid-column: span 2">
-              <label class="label">Description</label>
-              <textarea v-model="accountForm.description" rows="2" class="input"></textarea>
+            <div class="sa-form-field sa-form-field-full">
+              <label >Description</label>
+              <textarea v-model="accountForm.description" rows="2" ></textarea>
             </div>
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn-ghost" @click="showAccountModal=false">Annuler</button>
-          <button class="btn-primary" @click="submitAccount">{{ accountEditing ? 'Enregistrer' : 'Créer le compte' }}</button>
+          <button class="sa-btn sa-btn-secondary" @click="showAccountModal=false">Annuler</button>
+          <button class="sa-btn sa-btn-primary" @click="submitAccount">{{ accountEditing ? 'Enregistrer' : 'Créer le compte' }}</button>
         </div>
       </div>
     </div>
@@ -867,41 +958,41 @@ onMounted(async () => {
       <div class="modal-dialog">
         <div class="modal-header">
           <h3>{{ categoryEditing ? 'Modifier catégorie' : 'Nouvelle catégorie' }}</h3>
-          <button class="btn-icon close" @click="showCategoryModal=false">✕</button>
+          <button class="modal-close" @click="showCategoryModal=false">✕</button>
         </div>
         <div class="modal-body">
-          <div class="form-row row-3">
-            <div class="form-group">
-              <label class="label">Type *</label>
-              <select v-model="categoryForm.type" :class="['input', formErrors.type?'err':'']">
+          <div class="sa-form-grid">
+            <div class="sa-form-field">
+              <label >Type *</label>
+              <select v-model="categoryForm.type" >
                 <option value="income">Recette</option>
                 <option value="expense">Dépense</option>
               </select>
-              <div v-if="formErrors.type" class="err-msg">{{ formErrors.type }}</div>
+              <div v-if="formErrors.type" class="sa-error">{{ formErrors.type }}</div>
             </div>
-            <div class="form-group" style="grid-column: span 2">
-              <label class="label">Nom *</label>
-              <input v-model="categoryForm.name" :class="['input', formErrors.name?'err':'']" />
-              <div v-if="formErrors.name" class="err-msg">{{ formErrors.name }}</div>
+            <div class="sa-form-field sa-form-field-full">
+              <label >Nom *</label>
+              <input v-model="categoryForm.name"  />
+              <div v-if="formErrors.name" class="sa-error">{{ formErrors.name }}</div>
             </div>
           </div>
-          <div class="form-row row-3">
-            <div class="form-group">
-              <label class="label">Catégorie parente</label>
-              <select v-model="categoryForm.parent_id" class="input">
+          <div class="sa-form-grid">
+            <div class="sa-form-field">
+              <label >Catégorie parente</label>
+              <select v-model="categoryForm.parent_id" >
                 <option :value="null">— Aucune (racine) —</option>
                 <option v-for="c in (categoryForm.type==='income' ? txIncomeCats : txExpenseCats).filter(x => !categoryEditing || x.id !== categoryForm.id)" :key="c.id" :value="c.id">{{ c.name }}</option>
               </select>
             </div>
-            <div class="form-group" style="grid-column: span 2">
-              <label class="label">Description</label>
-              <textarea v-model="categoryForm.description" rows="2" class="input"></textarea>
+            <div class="sa-form-field sa-form-field-full">
+              <label >Description</label>
+              <textarea v-model="categoryForm.description" rows="2" ></textarea>
             </div>
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn-ghost" @click="showCategoryModal=false">Annuler</button>
-          <button class="btn-primary" @click="submitCategory">{{ categoryEditing ? 'Enregistrer' : 'Créer' }}</button>
+          <button class="sa-btn sa-btn-secondary" @click="showCategoryModal=false">Annuler</button>
+          <button class="sa-btn sa-btn-primary" @click="submitCategory">{{ categoryEditing ? 'Enregistrer' : 'Créer' }}</button>
         </div>
       </div>
     </div>
@@ -911,71 +1002,81 @@ onMounted(async () => {
       <div class="modal-dialog" style="max-width:640px">
         <div class="modal-header">
           <h3>{{ txEditing ? 'Modifier transaction' : 'Nouvelle transaction' }}</h3>
-          <button class="btn-icon close" @click="showTransactionModal=false">✕</button>
+          <button class="modal-close" @click="showTransactionModal=false">✕</button>
         </div>
         <div class="modal-body">
-          <div class="form-row row-3">
-            <div class="form-group">
-              <label class="label">Type *</label>
-              <select v-model="transactionForm.type" class="input">
+          <div class="sa-form-grid">
+            <div class="sa-form-field">
+              <label >Type *</label>
+              <select v-model="transactionForm.type" >
                 <option value="income">📥 Recette</option>
                 <option value="expense">📤 Dépense</option>
               </select>
             </div>
-            <div class="form-group">
-              <label class="label">Compte *</label>
-              <select v-model="transactionForm.account_id" :class="['input', formErrors.account_id?'err':'']">
+            <div class="sa-form-field">
+              <label >Compte *</label>
+              <select v-model="transactionForm.account_id" >
                 <option :value="null">— Sélectionner —</option>
                 <option v-for="a in activeAccounts" :key="'acctg'+a.id" :value="a.id">{{ a.name }} ({{ a.formatted_current_balance }})</option>
               </select>
-              <div v-if="formErrors.account_id" class="err-msg">{{ formErrors.account_id }}</div>
+              <div v-if="formErrors.account_id" class="sa-error">{{ formErrors.account_id }}</div>
             </div>
-            <div class="form-group">
-              <label class="label">Catégorie *</label>
-              <select v-model="transactionForm.category_id" :class="['input', formErrors.category_id?'err':'']">
-                <option :value="null">— Sélectionner —</option>
-                <optgroup v-if="transactionForm.type==='income'" label="Recettes">
-                  <option v-for="c in txIncomeCats" :key="'cati'+c.id" :value="c.id">{{ c.full_path_label || c.name }}</option>
-                </optgroup>
-                <optgroup v-if="transactionForm.type==='expense'" label="Dépenses">
-                  <option v-for="c in txExpenseCats" :key="'cate'+c.id" :value="c.id">{{ c.full_path_label || c.name }}</option>
-                </optgroup>
+            <div class="sa-form-field">
+              <label>Catégorie *</label>
+              <select v-model="transactionForm.category_id">
+                <option :value="null">— Sélectionner une catégorie —</option>
+                <template v-if="transactionForm.type === 'income'">
+                  <option v-for="c in txIncomeCats" :key="'cati'+c.id" :value="c.id">
+                    {{ c.full_path_label || c.name }}
+                  </option>
+                </template>
+                <template v-else-if="transactionForm.type === 'expense'">
+                  <option v-for="c in txExpenseCats" :key="'cate'+c.id" :value="c.id">
+                    {{ c.full_path_label || c.name }}
+                  </option>
+                </template>
               </select>
-              <div v-if="formErrors.category_id" class="err-msg">{{ formErrors.category_id }}</div>
+              <div v-if="formErrors.category_id" class="sa-error">{{ formErrors.category_id }}</div>
+              <div v-if="(transactionForm.type === 'income' && !txIncomeCats.length) || (transactionForm.type === 'expense' && !txExpenseCats.length)" style="font-size:11.5px;color:#d97706;margin-top:3px">
+                ℹ️ Aucune catégorie {{ transactionForm.type === 'income' ? 'de recette' : 'de dépense' }} trouvée.
+                <button type="button" @click="showTransactionModal=false;openCreateCategory(transactionForm.type)" style="background:none;border:none;color:#2563eb;font-weight:600;text-decoration:underline;cursor:pointer;padding:0;margin-left:4px">
+                  Créer une catégorie
+                </button>
+              </div>
             </div>
           </div>
-          <div class="form-row row-3">
-            <div class="form-group">
-              <label class="label">Montant *</label>
-              <input type="number" step="0.01" min="0" v-model.number="transactionForm.amount" :class="['input', formErrors.amount?'err':'']" />
-              <div v-if="formErrors.amount" class="err-msg">{{ formErrors.amount }}</div>
+          <div class="sa-form-grid">
+            <div class="sa-form-field">
+              <label >Montant *</label>
+              <input type="number" step="0.01" min="0" v-model.number="transactionForm.amount"  />
+              <div v-if="formErrors.amount" class="sa-error">{{ formErrors.amount }}</div>
             </div>
-            <div class="form-group">
-              <label class="label">Date *</label>
-              <input type="date" v-model="transactionForm.transaction_date" :class="['input', formErrors.transaction_date?'err':'']" />
-              <div v-if="formErrors.transaction_date" class="err-msg">{{ formErrors.transaction_date }}</div>
+            <div class="sa-form-field">
+              <label >Date *</label>
+              <input type="date" v-model="transactionForm.transaction_date"  />
+              <div v-if="formErrors.transaction_date" class="sa-error">{{ formErrors.transaction_date }}</div>
             </div>
-            <div class="form-group">
-              <label class="label">Mode de paiement</label>
-              <select v-model="transactionForm.payment_method" class="input">
+            <div class="sa-form-field">
+              <label >Mode de paiement</label>
+              <select v-model="transactionForm.payment_method" >
                 <option v-for="o in pmOpts" :key="o.value" :value="o.value">{{ o.label }}</option>
               </select>
             </div>
           </div>
-          <div class="form-row row-3">
-            <div class="form-group">
-              <label class="label">Référence</label>
-              <input v-model="transactionForm.reference" class="input" placeholder="Facture N°, reçu, ..." />
+          <div class="sa-form-grid">
+            <div class="sa-form-field">
+              <label >Référence</label>
+              <input v-model="transactionForm.reference"  placeholder="Facture N°, reçu, ..." />
             </div>
-            <div class="form-group" style="grid-column: span 2">
-              <label class="label">Description</label>
-              <textarea v-model="transactionForm.description" rows="2" class="input"></textarea>
+            <div class="sa-form-field sa-form-field-full">
+              <label >Description</label>
+              <textarea v-model="transactionForm.description" rows="2" ></textarea>
             </div>
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn-ghost" @click="showTransactionModal=false">Annuler</button>
-          <button class="btn-primary" @click="submitTransaction">{{ txEditing ? 'Enregistrer' : 'Créer' }}</button>
+          <button class="sa-btn sa-btn-secondary" @click="showTransactionModal=false">Annuler</button>
+          <button class="sa-btn sa-btn-primary" @click="submitTransaction">{{ txEditing ? 'Enregistrer' : 'Créer' }}</button>
         </div>
       </div>
     </div>
@@ -983,55 +1084,55 @@ onMounted(async () => {
     <!-- ================ MODALE TRANSFERT ================ -->
     <div v-if="showTransferModal" class="modal-backdrop" @click.self="showTransferModal=false">
       <div class="modal-dialog" style="max-width:560px">
-        <div class="modal-header"><h3>↔️ Nouveau transfert inter-comptes</h3><button class="btn-icon close" @click="showTransferModal=false">✕</button></div>
+        <div class="modal-header"><h3>↔️ Nouveau transfert inter-comptes</h3><button class="modal-close" @click="showTransferModal=false">✕</button></div>
         <div class="modal-body">
-          <div class="form-row row-3">
-            <div class="form-group">
-              <label class="label">Compte source *</label>
-              <select v-model="transferForm.from_account_id" :class="['input', formErrors.from_account_id?'err':'']">
+          <div class="sa-form-grid">
+            <div class="sa-form-field">
+              <label >Compte source *</label>
+              <select v-model="transferForm.from_account_id" >
                 <option :value="null">— Sélectionner —</option>
                 <option v-for="a in activeAccounts" :key="'froma'+a.id" :value="a.id">{{ a.name }} ({{ a.formatted_current_balance }})</option>
               </select>
-              <div v-if="formErrors.from_account_id" class="err-msg">{{ formErrors.from_account_id }}</div>
+              <div v-if="formErrors.from_account_id" class="sa-error">{{ formErrors.from_account_id }}</div>
             </div>
-            <div class="form-group">
-              <label class="label">Compte destination *</label>
-              <select v-model="transferForm.to_account_id" :class="['input', formErrors.to_account_id?'err':'']">
+            <div class="sa-form-field">
+              <label >Compte destination *</label>
+              <select v-model="transferForm.to_account_id" >
                 <option :value="null">— Sélectionner —</option>
                 <option v-for="a in activeAccounts" :key="'toa'+a.id" :value="a.id">{{ a.name }}</option>
               </select>
-              <div v-if="formErrors.to_account_id" class="err-msg">{{ formErrors.to_account_id }}</div>
+              <div v-if="formErrors.to_account_id" class="sa-error">{{ formErrors.to_account_id }}</div>
             </div>
-            <div class="form-group">
-              <label class="label">Montant *</label>
-              <input type="number" step="0.01" min="0" v-model.number="transferForm.amount" :class="['input', formErrors.amount?'err':'']" />
-              <div v-if="formErrors.amount" class="err-msg">{{ formErrors.amount }}</div>
+            <div class="sa-form-field">
+              <label >Montant *</label>
+              <input type="number" step="0.01" min="0" v-model.number="transferForm.amount"  />
+              <div v-if="formErrors.amount" class="sa-error">{{ formErrors.amount }}</div>
             </div>
           </div>
-          <div class="form-row row-3">
-            <div class="form-group">
-              <label class="label">Date</label>
-              <input type="date" v-model="transferForm.transaction_date" class="input" />
+          <div class="sa-form-grid">
+            <div class="sa-form-field">
+              <label >Date</label>
+              <input type="date" v-model="transferForm.transaction_date"  />
             </div>
-            <div class="form-group">
-              <label class="label">Référence</label>
-              <input v-model="transferForm.reference" class="input" />
+            <div class="sa-form-field">
+              <label >Référence</label>
+              <input v-model="transferForm.reference"  />
             </div>
-            <div class="form-group">
-              <label class="label">Mode</label>
-              <select v-model="transferForm.payment_method" class="input">
+            <div class="sa-form-field">
+              <label >Mode</label>
+              <select v-model="transferForm.payment_method" >
                 <option v-for="o in pmOpts" :key="o.value" :value="o.value">{{ o.label }}</option>
               </select>
             </div>
           </div>
-          <div class="form-group">
-            <label class="label">Motif / Description</label>
-            <textarea v-model="transferForm.description" rows="2" class="input"></textarea>
+          <div class="sa-form-field">
+            <label >Motif / Description</label>
+            <textarea v-model="transferForm.description" rows="2" ></textarea>
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn-ghost" @click="showTransferModal=false">Annuler</button>
-          <button class="btn-primary" style="background:linear-gradient(135deg,#8b5cf6,#6366f1)" @click="submitTransfer">⏵ Exécuter le transfert</button>
+          <button class="sa-btn sa-btn-secondary" @click="showTransferModal=false">Annuler</button>
+          <button class="sa-btn sa-btn-primary" style="background:linear-gradient(135deg,#8b5cf6,#6366f1)" @click="submitTransfer">⏵ Exécuter le transfert</button>
         </div>
       </div>
     </div>
@@ -1039,7 +1140,7 @@ onMounted(async () => {
     <!-- ================ MODALE APPROBATION ================ -->
     <div v-if="showApproveModal" class="modal-backdrop" @click.self="showApproveModal=false">
       <div class="modal-dialog" style="max-width:520px">
-        <div class="modal-header"><h3>✅ Approuver la transaction</h3><button class="btn-icon close" @click="showApproveModal=false">✕</button></div>
+        <div class="modal-header"><h3>✅ Approuver la transaction</h3><button class="modal-close" @click="showApproveModal=false">✕</button></div>
         <div class="modal-body">
           <div v-if="approveTarget" class="sa-user-cell" style="gap:14px;padding:14px;background:#ecfdf5;border-radius:12px;border:1px solid #a7f3d0;margin-bottom:14px">
             <div style="font-weight:800;font-family:monospace;color:#059669">{{ approveTarget.transaction_code }}</div>
@@ -1049,17 +1150,17 @@ onMounted(async () => {
             </div>
             <div :style="{color:dirColor(approveTarget),fontWeight:800}">{{ approveTarget.formatted_signed_amount }}</div>
           </div>
-          <div class="form-group">
-            <label class="label">Commentaire (facultatif)</label>
-            <textarea v-model="approveComment" rows="3" class="input" placeholder="Observations, référence interne..."></textarea>
+          <div class="sa-form-field">
+            <label >Commentaire (facultatif)</label>
+            <textarea v-model="approveComment" rows="3"  placeholder="Observations, référence interne..."></textarea>
           </div>
           <div v-if="!approveTarget?.can_current_user_approve" class="form-alert danger" style="margin-top:12px">
             ⚠️ Vous ne pouvez pas approuver une transaction que vous avez vous-même créée.
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn-ghost" @click="showApproveModal=false">Annuler</button>
-          <button class="btn-primary" style="background:linear-gradient(135deg,#10b981,#059669)" :disabled="!approveTarget?.can_current_user_approve || fStore.approving" @click="confirmApprove">
+          <button class="sa-btn sa-btn-secondary" @click="showApproveModal=false">Annuler</button>
+          <button class="sa-btn sa-btn-primary" style="background:linear-gradient(135deg,#10b981,#059669)" :disabled="!approveTarget?.can_current_user_approve || fStore.approving" @click="confirmApprove">
             {{ fStore.approving ? '⏳ Traitement...' : '✅ Confirmer approbation' }}
           </button>
         </div>
@@ -1069,7 +1170,7 @@ onMounted(async () => {
     <!-- ================ MODALE REJET ================ -->
     <div v-if="showRejectModal" class="modal-backdrop" @click.self="showRejectModal=false">
       <div class="modal-dialog" style="max-width:520px">
-        <div class="modal-header"><h3>❌ Rejeter la transaction</h3><button class="btn-icon close" @click="showRejectModal=false">✕</button></div>
+        <div class="modal-header"><h3>❌ Rejeter la transaction</h3><button class="modal-close" @click="showRejectModal=false">✕</button></div>
         <div class="modal-body">
           <div v-if="rejectTarget" class="sa-user-cell" style="gap:14px;padding:14px;background:#fef2f2;border-radius:12px;border:1px solid #fecaca;margin-bottom:14px">
             <div style="font-weight:800;font-family:monospace;color:#dc2626">{{ rejectTarget.transaction_code }}</div>
@@ -1079,14 +1180,14 @@ onMounted(async () => {
             </div>
             <div :style="{color:dirColor(rejectTarget),fontWeight:800}">{{ rejectTarget.formatted_signed_amount }}</div>
           </div>
-          <div class="form-group">
-            <label class="label">Motif du rejet *</label>
-            <textarea v-model="rejectReason" :class="['input', formErrors.rejection_reason?'err':'']" rows="4" placeholder="Pourquoi cette transaction est-elle rejetée ? (obligatoire)"></textarea>
+          <div class="sa-form-field">
+            <label >Motif du rejet *</label>
+            <textarea v-model="rejectReason"  rows="4" placeholder="Pourquoi cette transaction est-elle rejetée ? (obligatoire)"></textarea>
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn-ghost" @click="showRejectModal=false">Annuler</button>
-          <button class="btn-primary" style="background:linear-gradient(135deg,#ef4444,#dc2626)" :disabled="fStore.approving" @click="confirmReject">
+          <button class="sa-btn sa-btn-secondary" @click="showRejectModal=false">Annuler</button>
+          <button class="sa-btn sa-btn-primary" style="background:linear-gradient(135deg,#ef4444,#dc2626)" :disabled="fStore.approving" @click="confirmReject">
             {{ fStore.approving ? '⏳ Traitement...' : '❌ Confirmer le rejet' }}
           </button>
         </div>
@@ -1096,7 +1197,7 @@ onMounted(async () => {
     <!-- ================ MODALE DETAILS TRANSACTION ================ -->
     <div v-if="showDetailModal" class="modal-backdrop" @click.self="showDetailModal=false">
       <div class="modal-dialog" style="max-width:720px;max-height:90vh;overflow:auto">
-        <div class="modal-header"><h3>Détails transaction</h3><button class="btn-icon close" @click="showDetailModal=false">✕</button></div>
+        <div class="modal-header"><h3>Détails transaction</h3><button class="modal-close" @click="showDetailModal=false">✕</button></div>
         <div class="modal-body" v-if="detailTx">
           <div class="sa-user-cell" style="gap:14px;padding:16px;background:linear-gradient(135deg,#eff6ff,#faf5ff);border-radius:14px;margin-bottom:18px">
             <div style="font-family:monospace;font-weight:800;color:#2563eb;font-size:15px">{{ detailTx.transaction_code }}</div>
@@ -1105,6 +1206,36 @@ onMounted(async () => {
             <div style="flex:1"></div>
             <div :style="{color:dirColor(detailTx),fontWeight:800,fontSize:'20px',marginLeft:'auto'}">{{ detailTx.formatted_signed_amount }}</div>
           </div>
+          <!-- Bannière Statut Workflow (Approuvée / Rejetée / En attente) -->
+          <div v-if="detailTx.status === 'approved'" class="sa-user-cell" style="gap:12px;padding:12px 16px;background:#ecfdf5;border-radius:12px;border:1px solid #a7f3d0;margin-bottom:16px">
+            <div style="font-size:22px">✅</div>
+            <div style="flex:1">
+              <div style="font-weight:700;color:#065f46;font-size:13px">Transaction approuvée et validée</div>
+              <div style="font-size:12.5px;color:#047857;margin-top:2px">
+                Approuvé par <strong>{{ detailTx.approver?.name || (detailTx.approved_by ? 'Utilisateur #' + detailTx.approved_by : 'Responsable') }}</strong>
+                <span v-if="detailTx.formatted_approved_at || detailTx.approved_at" style="color:#059669">
+                  · le {{ detailTx.formatted_approved_at || detailTx.approved_at }}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div v-else-if="detailTx.status === 'rejected'" class="sa-user-cell" style="gap:12px;padding:12px 16px;background:#fef2f2;border-radius:12px;border:1px solid #fecaca;margin-bottom:16px">
+            <div style="font-size:22px">❌</div>
+            <div style="flex:1">
+              <div style="font-weight:700;color:#991b1b;font-size:13px">Transaction rejetée</div>
+              <div v-if="detailTx.rejection_reason" style="font-size:12.5px;color:#b91c1c;margin-top:2px">
+                <strong>Motif :</strong> {{ detailTx.rejection_reason }}
+              </div>
+            </div>
+          </div>
+          <div v-else-if="detailTx.status === 'pending'" class="sa-user-cell" style="gap:12px;padding:12px 16px;background:#fffbeb;border-radius:12px;border:1px solid #fde68a;margin-bottom:16px">
+            <div style="font-size:22px">⏳</div>
+            <div style="flex:1">
+              <div style="font-weight:700;color:#92400e;font-size:13px">En attente d'approbation</div>
+              <div style="font-size:12px;color:#b45309;margin-top:2px">Cette transaction doit être validée par un responsable avant de solder l'opération.</div>
+            </div>
+          </div>
+
           <div class="sa-stats-grid" style="grid-template-columns:1fr 1fr">
             <div><strong>Compte:</strong> {{ detailTx.account?.name }}</div>
             <div v-if="detailTx.type!=='transfer'"><strong>Catégorie:</strong> {{ detailTx.category?.name || '-' }}</div>
@@ -1115,7 +1246,15 @@ onMounted(async () => {
             <div><strong>Référence:</strong> {{ detailTx.reference || '-' }}</div>
             <div v-if="detailTx.transfer_group_code"><strong>Groupe transfert:</strong> <code style="font-family:monospace;background:#f3f4f6;padding:2px 6px;border-radius:4px">{{ detailTx.transfer_group_code }}</code></div>
             <div><strong>Créé par:</strong> {{ detailTx.creator?.name || '#'+detailTx.created_by }}</div>
-            <div v-if="detailTx.approver"><strong>Approuvé par:</strong> {{ detailTx.approver?.name }} le {{ detailTx.approved_at }}</div>
+            <div v-if="detailTx.status === 'approved' || detailTx.approver">
+              <strong>Approuvé par:</strong>
+              <span style="color:#059669;font-weight:700;margin-left:4px">
+                {{ detailTx.approver?.name || (detailTx.approved_by ? 'Utilisateur #' + detailTx.approved_by : '—') }}
+              </span>
+              <span v-if="detailTx.formatted_approved_at || detailTx.approved_at" style="font-size:12px;color:#6b7280;margin-left:4px">
+                ({{ detailTx.formatted_approved_at || detailTx.approved_at }})
+              </span>
+            </div>
             <div v-if="detailTx.rejection_reason" style="grid-column:span 2;color:#dc2626;background:#fef2f2;padding:10px;border-radius:8px"><strong>Motif rejet:</strong> {{ detailTx.rejection_reason }}</div>
             <div v-if="detailTx.description" style="grid-column:span 2"><strong>Description:</strong> {{ detailTx.description }}</div>
           </div>
@@ -1123,7 +1262,7 @@ onMounted(async () => {
           <div style="margin-top:22px">
             <div class="sa-user-cell" style="margin-bottom:10px">
               <h3 class="card-title" style="margin:0">📎 Pièces jointes ({{ fStore.selectedTransactionAttachments.length }})</h3>
-              <button class="btn-ghost" @click="openAttach(detailTx)">➕ Ajouter</button>
+              <button class="sa-btn sa-btn-secondary" @click="openAttach(detailTx)">➕ Ajouter</button>
             </div>
             <div v-if="!fStore.selectedTransactionAttachments.length" class="sa-empty">Aucune pièce jointe</div>
             <div v-else style="display:flex;flex-wrap:wrap;gap:10px">
@@ -1147,11 +1286,11 @@ onMounted(async () => {
           </div>
         </div>
         <div class="modal-footer" v-if="detailTx">
-          <button class="btn-ghost" @click="showDetailModal=false">Fermer</button>
-          <button v-if="detailTx.can_be_edited" class="btn-ghost" @click="showDetailModal=false;openEditTx(detailTx)">✏️ Modifier</button>
-          <button v-if="detailTx.status==='pending' && detailTx.can_current_user_approve" class="btn-primary" style="background:linear-gradient(135deg,#10b981,#059669)" @click="showDetailModal=false;openApprove(detailTx)">✅ Approuver</button>
-          <button v-if="detailTx.status==='pending' && detailTx.can_current_user_reject" class="btn-primary" style="background:linear-gradient(135deg,#ef4444,#dc2626)" @click="showDetailModal=false;openReject(detailTx)">❌ Rejeter</button>
-          <button v-if="detailTx.status==='approved'" class="btn-ghost" @click="showDetailModal=false;askReverseTx(detailTx)">↩️ Contre-écrire</button>
+          <button class="sa-btn sa-btn-secondary" @click="showDetailModal=false">Fermer</button>
+          <button v-if="detailTx.can_be_edited" class="sa-btn sa-btn-secondary" @click="showDetailModal=false;openEditTx(detailTx)">✏️ Modifier</button>
+          <button v-if="detailTx.status==='pending' && detailTx.can_current_user_approve" class="sa-btn sa-btn-primary" style="background:linear-gradient(135deg,#10b981,#059669)" @click="showDetailModal=false;openApprove(detailTx)">✅ Approuver</button>
+          <button v-if="detailTx.status==='pending' && detailTx.can_current_user_reject" class="sa-btn sa-btn-primary" style="background:linear-gradient(135deg,#ef4444,#dc2626)" @click="showDetailModal=false;openReject(detailTx)">❌ Rejeter</button>
+          <button v-if="detailTx.status==='approved'" class="sa-btn sa-btn-secondary" @click="showDetailModal=false;askReverseTx(detailTx)">↩️ Contre-écrire</button>
         </div>
       </div>
     </div>
@@ -1159,19 +1298,19 @@ onMounted(async () => {
     <!-- ================ MODALE UPLOAD ATTACHMENT ================ -->
     <div v-if="showAttachModal" class="modal-backdrop" @click.self="showAttachModal=false">
       <div class="modal-dialog" style="max-width:620px;max-height:90vh;overflow:auto">
-        <div class="modal-header"><h3>📎 Pièces jointes</h3><button class="btn-icon close" @click="showAttachModal=false">✕</button></div>
+        <div class="modal-header"><h3>📎 Pièces jointes</h3><button class="modal-close" @click="showAttachModal=false">✕</button></div>
         <div class="modal-body">
           <div v-if="attachTx" style="margin-bottom:14px;font-size:13px;color:#374151">
             Transaction: <strong style="font-family:monospace;color:#2563eb">{{ attachTx.transaction_code }}</strong> · {{ attachTx.description || attachTx.category?.name }}
           </div>
-          <div class="form-group" style="border:2px dashed #c7d2fe;background:#f5f3ff;padding:16px;border-radius:12px;margin-bottom:14px">
-            <label class="label">Sélectionner un fichier (max 10 Mo)</label>
-            <input type="file" class="input" @change="pickFile" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt" />
+          <div class="sa-form-field" style="border:2px dashed #c7d2fe;background:#f5f3ff;padding:16px;border-radius:12px;margin-bottom:14px">
+            <label >Sélectionner un fichier (max 10 Mo)</label>
+            <input type="file"  @change="pickFile" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt" />
             <div v-if="attachForm.file" style="margin-top:10px;font-size:12px;color:#374151;background:#fff;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb">
               📄 <strong>{{ attachForm.file.name }}</strong> · {{ (attachForm.file.size/1024).toFixed(1) }} Ko
             </div>
           </div>
-          <button class="btn-primary" @click="submitAttachment" :disabled="!attachForm.file || fStore.saving">
+          <button class="sa-btn sa-btn-primary" @click="submitAttachment" :disabled="!attachForm.file || fStore.saving">
             {{ fStore.saving ? '⏳ Upload...' : '⬆️ Envoyer la pièce jointe' }}
           </button>
           <hr style="margin:20px 0;border:0;border-top:1px solid #e5e7eb" />
@@ -1197,7 +1336,7 @@ onMounted(async () => {
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn-ghost" @click="showAttachModal=false">Terminé</button>
+          <button class="sa-btn sa-btn-secondary" @click="showAttachModal=false">Terminé</button>
         </div>
       </div>
     </div>
@@ -1205,7 +1344,7 @@ onMounted(async () => {
     <!-- ================ MODALE CONFIRM GENERIQUE ================ -->
     <div v-if="showConfirmModal" class="modal-backdrop" @click.self="showConfirmModal=false">
       <div class="modal-dialog" style="max-width:460px">
-        <div class="modal-header"><h3>Confirmer l'action</h3><button class="btn-icon close" @click="showConfirmModal=false">✕</button></div>
+        <div class="modal-header"><h3>Confirmer l'action</h3><button class="modal-close" @click="showConfirmModal=false">✕</button></div>
         <div class="modal-body">
           <div class="sa-user-cell" style="padding:14px;border-radius:12px;margin-bottom:10px"
                :style="confirmType==='danger'?'background:#fef2f2;border:1px solid #fecaca':confirmType==='success'?'background:#ecfdf5;border:1px solid #a7f3d0':'background:#fffbeb;border:1px solid #fde68a'">
@@ -1214,8 +1353,8 @@ onMounted(async () => {
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn-ghost" @click="showConfirmModal=false">Annuler</button>
-          <button class="btn-primary"
+          <button class="sa-btn sa-btn-secondary" @click="showConfirmModal=false">Annuler</button>
+          <button class="sa-btn sa-btn-primary"
                   :style="confirmType==='danger'?'background:linear-gradient(135deg,#ef4444,#dc2626)':confirmType==='success'?'background:linear-gradient(135deg,#10b981,#059669)':''"
                   @click="confirmActionFn">Confirmer</button>
         </div>
@@ -1231,4 +1370,32 @@ onMounted(async () => {
 .btn-page:hover { border-color:#93c5fd }
 .btn-page.active { background:linear-gradient(135deg,#3b82f6,#2563eb);color:#fff;border-color:#2563eb }
 .btn-page:disabled { opacity:.5;cursor:not-allowed }
+
+.sa-btn { display:inline-flex;align-items:center;gap:6px;padding:10px 16px;border-radius:10px;font-weight:600;font-size:13px;border:1px solid transparent;cursor:pointer;transition:all .12s;white-space:nowrap; }
+.sa-btn-primary { background:linear-gradient(135deg,#10b981,#059669);color:#fff;box-shadow:0 6px 16px rgba(16,185,129,0.25); }
+.sa-btn-primary:hover { filter:brightness(1.04);transform:translateY(-1px); }
+.sa-btn-primary:disabled { opacity:.6;cursor:not-allowed; }
+.sa-btn-secondary { background:#fff;color:#111827;border-color:#e5e7eb; }
+.sa-btn-secondary:hover { background:#f9fafb;border-color:#d1d5db; }
+.sa-btn-danger { background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff; }
+
+.sa-form-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px; }
+.sa-form-field { display:flex;flex-direction:column;gap:6px; }
+.sa-form-field-full { grid-column:1 / -1; }
+.sa-form-field label { font-size:13px;font-weight:600;color:#111827; }
+.sa-form-field input, .sa-form-field select, .sa-form-field textarea { padding:10px 12px;border-radius:10px;border:1px solid #d1d5db;font-size:13.5px;background:#fff;outline:none;transition:border-color .12s; }
+.sa-form-field input:focus, .sa-form-field select:focus, .sa-form-field textarea:focus { border-color:#10b981;box-shadow:0 0 0 3px rgba(16,185,129,0.15); }
+.sa-error { color:#b91c1c;font-size:12px;font-weight:600; }
+
+.modal-backdrop { position:fixed;inset:0;background:rgba(17,24,39,0.55);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(3px); }
+.modal-dialog { background:#fff;border-radius:18px;width:min(720px, 100%);max-height:92vh;overflow:auto;box-shadow:0 30px 80px rgba(0,0,0,0.3);display:flex;flex-direction:column; }
+.modal-dialog-sm { width:min(460px,100%); }
+.modal-header { display:flex;justify-content:space-between;align-items:center;padding:18px 22px;border-bottom:1px solid #f3f4f6; }
+.modal-header h3 { margin:0;font-size:17px; }
+.modal-close { border:none;background:none;font-size:24px;cursor:pointer;color:#6b7280;width:34px;height:34px;border-radius:8px; }
+.modal-close:hover { background:#f3f4f6; }
+.modal-body { padding:20px 22px; }
+.modal-body p { margin:4px 0;font-size:14px; }
+.modal-footer { display:flex;justify-content:flex-end;gap:10px;padding:14px 22px;border-top:1px solid #f3f4f6;background:#fafafa;border-radius:0 0 18px 18px; }
+
 </style>

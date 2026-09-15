@@ -3,25 +3,27 @@ import { computed, onMounted, ref } from 'vue'
 import { RouterView, useRouter, RouterLink } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useChurchesStore } from '@/stores/churches'
+import { useChatStore } from '@/stores/chat'
 
 const authStore = useAuthStore()
 const churchesStore = useChurchesStore()
+const chatStore = useChatStore()
 const router = useRouter()
 
 const navItems = [
   { key: 'dashboard', icon: '📊', label: 'Tableau de bord', path: '/dashboard', active: true },
   { key: 'churches', icon: '⛪', label: 'Mes Églises', path: '/churches' },
   { key: 'members', icon: '👥', label: 'Membres', path: '/members' },
-  { key: 'presences', icon: '✅', label: 'Présences', path: '/presences' },
-  { key: 'communication', icon: '✉️', label: 'Communication', path: '/communication' },
-  { key: 'assistant', icon: '🤖', label: 'Assistant IA', path: '/assistant' },
-  { key: 'requests', icon: '📋', label: 'Demandes', path: '/requests' },
-  { key: 'services', icon: '🤲', label: 'Services & Ministères', path: '/services' },
-  { key: 'events', icon: '📅', label: 'Événements', path: '/events' },
+  { key: 'presences', icon: '📅', label: 'Présences', path: '/presences' },
+  { key: 'communication', icon: '💬', label: 'Messagerie Pastorale', path: '/communication' },
+  { key: 'assistant', icon: '🕊️', label: 'Assistant IA Spirituel', path: '/assistant' },
+  // { key: 'requests', icon: '📋', label: 'Demandes', path: '/requests' },
+  { key: 'services', icon: '🤝', label: 'Services & Ministères', path: '/services' },
+  { key: 'events', icon: '🎉', label: 'Événements', path: '/events' },
   { key: 'finances', icon: '💰', label: 'Finances', path: '/finances' },
   { key: 'resources', icon: '📚', label: 'Ressources & Formation', path: '/resources' },
-  { key: 'media', icon: '🎬', label: 'Médias & Diffusion', path: '/media' },
-  { key: 'reports', icon: '📈', label: 'Tableaux de bord', path: '/reports' },
+  { key: 'media', icon: '🎥', label: 'Médias & Diffusion', path: '/live-streams' },
+  // { key: 'reports', icon: '📈', label: 'Tableaux de bord', path: '/reports' },
   { key: 'settings', icon: '⚙️', label: 'Paramètres & Sécurité', path: '/settings' },
 ]
 
@@ -30,15 +32,15 @@ const superAdminNav = {
   icon: '👑',
   label: 'Super Admin',
   path: '/super-admin',
-  badge: '🔒',
+  badge: 'SA',
 }
 
 const shortcuts = [
-  { icon: '➕', label: 'Ajouter un membre', color: '#10B981' },
-  { icon: '✍️', label: 'Enregistrer une présence', color: '#3B82F6' },
-  { icon: '💬', label: 'Envoyer un message', color: '#F59E0B' },
-  { icon: '📝', label: 'Nouvelle demande', color: '#8B5CF6' },
-  { icon: '💸', label: 'Nouveau don', color: '#10B981' },
+  { icon: '👥', label: 'Ajouter un membre', color: '#10B981', path: '/members' },
+  { icon: '📅', label: 'Enregistrer une présence', color: '#3B82F6', path: '/presences' },
+  { icon: '💬', label: 'Envoyer un message', color: '#F59E0B', path: '/communication' },
+  { icon: '🕊️', label: 'Assistant Spirituel', color: '#8B5CF6', path: '/assistant' },
+  { icon: '💰', label: 'Nouveau don', color: '#10B981', path: '/finances' },
 ]
 
 const activeRoute = computed(() => router.currentRoute.value.path)
@@ -87,8 +89,11 @@ const switchTo = (opt) => {
 
 onMounted(async () => {
   try {
-    if (authStore.isAuthenticated && authStore.churches.length === 0) {
-      await authStore.fetchChurches({ silent: true })
+    if (authStore.isAuthenticated) {
+      if (authStore.churches.length === 0) {
+        await authStore.fetchChurches({ silent: true })
+      }
+      await chatStore.fetchUnreadCount()
     }
   } catch (e) {}
   document.addEventListener('click', (e) => {
@@ -138,6 +143,9 @@ const userInitial = computed(() => {
         >
           <span class="nav-item-icon">{{ item.icon }}</span>
           <span class="nav-item-text">{{ item.label }}</span>
+          <span v-if="item.key === 'communication' && chatStore.unreadTotal > 0" class="nav-unread-badge">
+            {{ chatStore.unreadTotal }}
+          </span>
           <span class="nav-item-arrow">›</span>
         </button>
 
@@ -164,7 +172,7 @@ const userInitial = computed(() => {
             v-for="(sc, i) in shortcuts"
             :key="i"
             class="shortcut-item"
-            @click="goTo('/members')"
+            @click="goTo(sc.path || '/members')"
           >
             <span class="shortcut-icon" :style="{ background: sc.color }">
               {{ sc.icon }}
@@ -186,8 +194,9 @@ const userInitial = computed(() => {
             🔔
             <span class="notif-dot"></span>
           </button>
-          <button class="topbar-icon-btn" title="Messages">
+          <button class="topbar-icon-btn" title="Messagerie Pastorale" @click="goTo('/communication')">
             💬
+            <span v-if="chatStore.unreadTotal > 0" class="notif-dot"></span>
           </button>
 
           <div class="church-select" v-if="authStore.showChurchSwitcher || authStore.churches.length" @click.stop>
@@ -381,4 +390,16 @@ const userInitial = computed(() => {
   transition: transform 0.1s;
 }
 .church-dropdown-footer a:hover { transform: translateY(-1px); filter: brightness(1.03); }
+
+.nav-unread-badge {
+  background: #10b981;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  margin-left: auto;
+  margin-right: 6px;
+  line-height: 1.2;
+}
 </style>

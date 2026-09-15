@@ -1,125 +1,107 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { dashboardApi } from '@/api/dashboard'
 import SparklineChart from '@/components/dashboard/SparklineChart.vue'
 import LineChart from '@/components/dashboard/LineChart.vue'
 import DonutChart from '@/components/dashboard/DonutChart.vue'
 
+const router = useRouter()
 const authStore = useAuthStore()
 
 const loading = ref(false)
 const chartPeriod = ref('Mensuel')
 const finPeriod = ref('Mensuel')
 
+// 1. STATS KPI (Initialisées à zéro, 100% connectées à la base de données)
 const stats = ref({
-  members_total: {
-    value: 12458, growth: 12.5, new_this_month: 1392,
-    sparkline: [3200, 4100, 3900, 5200, 6000, 5800, 7200, 7900, 8800, 10200, 11000, 12458],
-  },
-  presences_month: {
-    value: 8752, growth: 15.3, attendance_rate: 70.2,
-    sparkline: [5000, 5200, 5800, 6100, 6400, 6900, 7100, 7600, 7900, 8100, 8300, 8752],
-  },
-  donations: {
-    value: 25680000, currency: 'FCFA', growth: 18.6,
-    sparkline: [18000000, 18500000, 19000000, 20000000, 21500000, 22000000, 22400000, 23000000, 23800000, 24500000, 25100000, 25680000],
-  },
-  events: {
-    value: 24, growth: 9.1,
-    sparkline: [10, 12, 11, 14, 15, 16, 18, 17, 19, 21, 23, 24],
-  },
-  pending_requests: {
-    value: 58, growth: -5.6,
-    sparkline: [40, 45, 52, 60, 55, 62, 68, 70, 64, 60, 59, 58],
-  },
+  members_total: { value: 0, growth: 0, new_this_month: 0, sparkline: [] },
+  presences_month: { value: 0, growth: 0, attendance_rate: 0, sparkline: [] },
+  donations: { value: 0, currency: 'FCFA', growth: 0, sparkline: [] },
+  events: { value: 0, growth: 0, sparkline: [] },
+  pending_requests: { value: 0, growth: 0, sparkline: [] },
 })
 
+// 2. GRAPHIQUE PRÉSENCES & DONS
 const chartData = ref({
   labels: [],
   datasets: [],
 })
 
+// 3. RÉPARTITION PAR MINISTÈRE
 const ministryDistribution = ref({
-  total: 12458,
-  ministries: [
-    { id: 1, name: 'Louange & Adoration', count: 2845, percentage: 22.8, color: '#4F46E5' },
-    { id: 2, name: 'Enseignement', count: 2156, percentage: 17.3, color: '#10B981' },
-    { id: 3, name: 'Jeunesse', count: 1985, percentage: 15.9, color: '#F59E0B' },
-    { id: 4, name: 'Intercession', count: 1624, percentage: 13.0, color: '#EF4444' },
-    { id: 5, name: 'Diaconat', count: 1256, percentage: 10.1, color: '#8B5CF6' },
-    { id: 6, name: 'Autres', count: 2592, percentage: 20.9, color: '#6B7280' },
-  ],
+  total: 0,
+  ministries: [],
 })
 
+// 4. RÉSUMÉ FINANCIER
 const financial = ref({
   period: 'Mensuel',
-  receipts: {
-    total: 28560000, growth: 18.6, currency: 'FCFA',
-    breakdown: [
-      { label: 'Dîmes', value: 12450000, percentage: 43.6 },
-      { label: 'Offrandes', value: 9869000, percentage: 34.6 },
-      { label: 'Dons', value: 4120000, percentage: 14.4 },
-      { label: 'Autres', value: 2121000, percentage: 7.4 },
-    ],
-  },
-  expenses: {
-    total: 12850000, growth: -8.3, currency: 'FCFA',
-    breakdown: [
-      { label: 'Salaires', value: 5200000, percentage: 40.5 },
-      { label: 'Projets', value: 3200000, percentage: 24.9 },
-      { label: 'Fonctionnement', value: 2450000, percentage: 19.1 },
-      { label: 'Autres', value: 2000000, percentage: 15.6 },
-    ],
-  },
-  net_balance: {
-    total: 15710000, growth: 27.4, currency: 'FCFA',
-  },
+  receipts: { total: 0, growth: 0, currency: 'FCFA', breakdown: [] },
+  expenses: { total: 0, growth: 0, currency: 'FCFA', breakdown: [] },
+  net_balance: { total: 0, growth: 0, currency: 'FCFA' },
 })
 
-const upcomingEvents = ref([
-  { id: 1, day: '25', month: 'MAI', title: 'Culte dominical', meta: 'Temple principal', time: '25 Mai 2026 · 08:00 - 11:00', status: 'À venir' },
-  { id: 2, day: '28', month: 'MAI', title: 'Réunion des jeunes', meta: 'Salle des jeunes', time: '28 Mai 2026 · 17:00 - 19:30', status: 'À venir' },
-  { id: 3, day: '31', month: 'MAI', title: 'Conférence des couples', meta: 'Auditorium', time: '31 Mai 2026 · 14:00 - 17:30', status: 'À venir' },
-])
+// 5. PROCHAINS ÉVÉNEMENTS
+const upcomingEvents = ref([])
 
-const recentActivities = ref([
-  { id: 1, type: 'new_member', icon: '👤', color: '#8B5CF6', title: 'Nouveau membre inscrit', desc: 'Marie KOUASSI', time: 'Il y a 5 min' },
-  { id: 2, type: 'attendance', icon: '✅', color: '#10B981', title: 'Présence enregistrée', desc: 'Culte du dimanche', time: 'Il y a 15 min' },
-  { id: 3, type: 'donation', icon: '💰', color: '#F59E0B', title: 'Nouveau don reçu', desc: 'Offrande - 50 000 FCFA', time: 'Il y a 25 min' },
-  { id: 4, type: 'prayer_request', icon: '🙏', color: '#EC4899', title: 'Demande de prière', desc: 'Par Jean Paul M.', time: 'Il y a 35 min' },
-  { id: 5, type: 'event', icon: '📅', color: '#4F46E5', title: 'Nouvel événement créé', desc: 'Conférence des couples', time: 'Il y a 1 h' },
-])
+// 6. ACTIVITÉS RÉCENTES
+const recentActivities = ref([])
 
+// 7. SERVICES & OUTILS NUMÉRIQUES
 const devices = ref({
-  smart_terminals: { label: 'Borne intelligente', status: 'En ligne', value: '3 bornes actives', color: 'green' },
-  rfid_cards: { label: 'Cartes RFID', status: 'Actives', value: '2 458 cartes', color: 'purple' },
-  qr_code: { label: 'QR Code', status: 'Utilisés ce mois', value: '1 256 scans', color: 'purple' },
-  telephone: { label: 'Téléphone / USSD', status: 'Actif', value: '+228 90 XX XX XX', color: 'blue' },
-  voice_assistant: { label: 'Assistant Vocal (IA)', status: 'Disponible', value: '24/7', color: 'purple' },
+  smart_terminals: { label: 'Régie & Diffusions', status: 'Disponible', value: '0 diffusion', color: 'green' },
+  rfid_cards: { label: 'Badges & Cartes', status: 'En attente', value: '0 membre badgé', color: 'purple' },
+  qr_code: { label: 'Scans QR Présence', status: 'En attente', value: '0 scan ce mois', color: 'purple' },
+  telephone: { label: 'Fidèles Joignables', status: 'En attente', value: '0 numéro', color: 'blue' },
+  voice_assistant: { label: 'Assistant Vocal (IA)', status: 'Opérationnel', value: '0 échange', color: 'purple' },
 })
 
+// Canaux de communication interactifs
 const channels = [
-  { key: 'sms', name: 'SMS', action: 'Envoyer SMS', icon: '💬', class: 'sms' },
-  { key: 'whatsapp', name: 'WhatsApp', action: 'Envoyer message', icon: '📞', class: 'whatsapp' },
-  { key: 'email', name: 'Email', action: 'Envoyer email', icon: '✉️', class: 'email' },
-  { key: 'push', name: 'Push', action: 'Notification push', icon: '🔔', class: 'push' },
-  { key: 'call', name: 'Appels vocaux', action: 'Passer un appel', icon: '📞', class: 'call' },
-  { key: 'live', name: 'Diffusions Live', action: 'Démarrer live', icon: '▶️', class: 'live' },
+  { key: 'sms', name: 'SMS', action: 'Envoyer SMS', icon: '💬', class: 'sms', route: '/communication' },
+  { key: 'whatsapp', name: 'WhatsApp', action: 'Envoyer message', icon: '📞', class: 'whatsapp', route: '/communication' },
+  { key: 'email', name: 'Email', action: 'Envoyer email', icon: '✉️', class: 'email', route: '/communication' },
+  { key: 'push', name: 'Push', action: 'Notification push', icon: '🔔', class: 'push', route: '/communication' },
+  { key: 'call', name: 'Annuaire', action: 'Consulter membres', icon: '📞', class: 'call', route: '/members' },
+  { key: 'live', name: 'Diffusions Live', action: 'Studio direct', icon: '▶️', class: 'live', route: '/live-streams' },
 ]
 
-const formatCurrency = (val) => {
-  return new Intl.NumberFormat('fr-FR').format(val || 0) + ' FCFA'
+// Formatage monétaire dynamique
+const formatCurrency = (val, customCurrency = null) => {
+  const curr = customCurrency || stats.value.donations?.currency || 'FCFA'
+  return new Intl.NumberFormat('fr-FR').format(val || 0) + ' ' + curr
 }
+
 const formatNumber = (val) => {
   return new Intl.NumberFormat('fr-FR').format(val || 0)
 }
 
-const userName = computed(() => authStore.userName)
+const userName = computed(() => authStore.userName || 'Bienvenue')
 
+// Nom de l'église courante selon le contexte utilisateur
+const activeChurchName = computed(() => {
+  if (authStore.userChurchName) return authStore.userChurchName
+  if (authStore.currentChurchId) {
+    const c = authStore.churches.find(item => item.id === authStore.currentChurchId)
+    if (c) return c.name
+  }
+  return 'Toutes mes églises'
+})
+
+// Libellé de la période courante (ex: Septembre 2026)
+const currentPeriodLabel = computed(() => {
+  const now = new Date()
+  const month = now.toLocaleString('fr-FR', { month: 'long' })
+  return `${month.charAt(0).toUpperCase() + month.slice(1)} ${now.getFullYear()}`
+})
+
+// Chargement global de toutes les données du dashboard depuis l'API
 const loadAll = async () => {
   loading.value = true
   try {
+    const periodParam = chartPeriod.value === 'Hebdomadaire' ? 'weekly' : 'monthly'
     const [
       statsRes,
       chartRes,
@@ -130,7 +112,7 @@ const loadAll = async () => {
       devicesRes,
     ] = await Promise.allSettled([
       dashboardApi.getStats(),
-      dashboardApi.getPresenceDonationChart(),
+      dashboardApi.getPresenceDonationChart(periodParam),
       dashboardApi.getMinistryDistribution(),
       dashboardApi.getFinancialSummary(),
       dashboardApi.getUpcomingEvents(),
@@ -154,10 +136,10 @@ const loadAll = async () => {
       financial.value = finRes.value.data
     }
     if (eventsRes.status === 'fulfilled' && eventsRes.value?.data) {
-      upcomingEvents.value = eventsRes.value.data
+      upcomingEvents.value = Array.isArray(eventsRes.value.data) ? eventsRes.value.data : []
     }
     if (activitiesRes.status === 'fulfilled' && activitiesRes.value?.data) {
-      const raw = activitiesRes.value.data
+      const raw = Array.isArray(activitiesRes.value.data) ? activitiesRes.value.data : []
       recentActivities.value = raw.map((a) => ({
         id: a.id,
         type: a.type,
@@ -169,6 +151,7 @@ const loadAll = async () => {
               a.type === 'donation' ? '💰' :
               a.type === 'prayer_request' ? '🙏' :
               a.type === 'event' ? '📅' :
+              a.type === 'live' ? '▶️' :
               a.type === 'message' ? '💬' : '📌',
         color: a.color || '#4F46E5',
       }))
@@ -177,63 +160,69 @@ const loadAll = async () => {
       devices.value = devicesRes.value.data
     }
   } catch (e) {
-    console.warn('Dashboard API partial error (fallback to demo data):', e)
+    console.error('Erreur de chargement du tableau de bord:', e)
   } finally {
     loading.value = false
-    if (!chartData.value.labels?.length) {
-      const labels = []
-      const presences = []
-      const donations = []
-      for (let i = 0; i < 30; i++) {
-        const d = new Date()
-        d.setDate(d.getDate() - (29 - i))
-        labels.push(`${String(d.getDate()).padStart(2,'0')} ${d.toLocaleString('fr-FR', { month: 'short' })}`)
-        const dow = d.getDay()
-        let p = 350 + Math.floor(Math.random() * 500)
-        let dn = 500000 + Math.floor(Math.random() * 1500000)
-        if (dow === 0) { p *= 2.5; dn *= 3 }
-        presences.push(Math.floor(p))
-        donations.push(Math.floor(dn))
-      }
+  }
+}
+
+// Changement de période du graphique
+watch(chartPeriod, async (newVal) => {
+  try {
+    const periodParam = newVal === 'Hebdomadaire' ? 'weekly' : 'monthly'
+    const res = await dashboardApi.getPresenceDonationChart(periodParam)
+    if (res?.data) {
       chartData.value = {
-        labels,
-        datasets: [
-          { label: 'Présences', data: presences, borderColor: '#3B82F6' },
-          { label: 'Dons (FCFA)', data: donations, borderColor: '#10B981' },
-        ],
+        labels: res.data.labels || [],
+        datasets: res.data.datasets || [],
       }
     }
+  } catch (err) {
+    console.error('Erreur mise à jour graphique:', err)
   }
+})
+
+const navigateTo = (path) => {
+  if (path) router.push(path)
 }
 
 onMounted(loadAll)
 </script>
 
 <template>
-  <div>
+  <div class="dashboard-page">
+    
+    <!-- En-tête du Tableau de Bord -->
     <div class="page-header">
       <div class="page-title">
         <h2>Bonjour, {{ userName }} ! 👋</h2>
-        <p>Voici l'aperçu général de votre organisation aujourd'hui.</p>
+        <p>Aperçu en temps réel des données de votre église.</p>
       </div>
       <div class="page-header-actions">
-        <select class="filter-select">
-          <option>Toutes les églises</option>
-          <option>Église Source de Vie</option>
-        </select>
-        <div class="date-filter">
-          <span>01 Mai - 31 Mai 2026</span>
-          <span>📅</span>
+        <!-- Badge Église Active -->
+        <div class="church-context-chip" :title="'Église active : ' + activeChurchName">
+          <span class="church-icon">⛪</span>
+          <span class="church-name text-truncate">{{ activeChurchName }}</span>
         </div>
-        <button class="btn-export">
-          <span>📤</span>
-          Exporter le rapport
+
+        <!-- Période en cours -->
+        <div class="date-filter">
+          <span>📅 {{ currentPeriodLabel }}</span>
+        </div>
+
+        <!-- Bouton Rafraîchir -->
+        <button class="btn-export" @click="loadAll" :disabled="loading" title="Actualiser les données">
+          <span :class="{ 'spin-icon': loading }">🔄</span>
+          <span>Actualiser</span>
         </button>
       </div>
     </div>
 
+    <!-- Grille des Cartes KPI Principales -->
     <div class="stats-grid">
-      <div class="stat-card">
+      
+      <!-- 1. Membres Totaux -->
+      <div class="stat-card" @click="navigateTo('/members')">
         <div class="stat-card-header">
           <div style="flex:1">
             <div class="stat-label">Membres totaux</div>
@@ -248,7 +237,7 @@ onMounted(loadAll)
           <div class="stat-icon purple">👥</div>
         </div>
         <div class="stat-meta">
-          <span>+{{ formatNumber(stats.members_total.new_this_month) }} ce mois</span>
+          <span>+{{ formatNumber(stats.members_total.new_this_month) }} inscrit(s) ce mois</span>
         </div>
         <SparklineChart
           :data="stats.members_total.sparkline || []"
@@ -258,7 +247,8 @@ onMounted(loadAll)
         />
       </div>
 
-      <div class="stat-card">
+      <!-- 2. Présences du Mois -->
+      <div class="stat-card" @click="navigateTo('/presences')">
         <div class="stat-card-header">
           <div style="flex:1">
             <div class="stat-label">Présences (ce mois)</div>
@@ -273,7 +263,7 @@ onMounted(loadAll)
           <div class="stat-icon green">✅</div>
         </div>
         <div class="stat-meta">
-          <span>{{ stats.presences_month.attendance_rate }}% taux de présence</span>
+          <span>{{ stats.presences_month.attendance_rate }}% taux de présence estimé</span>
         </div>
         <SparklineChart
           :data="stats.presences_month.sparkline || []"
@@ -283,12 +273,13 @@ onMounted(loadAll)
         />
       </div>
 
-      <div class="stat-card">
+      <!-- 3. Recettes & Dons du Mois -->
+      <div class="stat-card" @click="navigateTo('/finances')">
         <div class="stat-card-header">
           <div style="flex:1">
-            <div class="stat-label">Dons & Offrandes</div>
+            <div class="stat-label">Recettes (ce mois)</div>
             <div class="stat-value-row">
-              <span class="stat-value">{{ formatCurrency(stats.donations.value) }}</span>
+              <span class="stat-value">{{ formatCurrency(stats.donations.value, stats.donations.currency) }}</span>
               <span class="stat-growth" :class="stats.donations.growth >= 0 ? 'up' : 'down'">
                 <span>{{ stats.donations.growth >= 0 ? '↑' : '↓' }}</span>
                 {{ Math.abs(stats.donations.growth) }}%
@@ -308,10 +299,11 @@ onMounted(loadAll)
         />
       </div>
 
-      <div class="stat-card">
+      <!-- 4. Événements à venir -->
+      <div class="stat-card" @click="navigateTo('/events')">
         <div class="stat-card-header">
           <div style="flex:1">
-            <div class="stat-label">Événements</div>
+            <div class="stat-label">Événements à venir</div>
             <div class="stat-value-row">
               <span class="stat-value">{{ formatNumber(stats.events.value) }}</span>
               <span class="stat-growth" :class="stats.events.growth >= 0 ? 'up' : 'down'">
@@ -323,7 +315,7 @@ onMounted(loadAll)
           <div class="stat-icon blue">📅</div>
         </div>
         <div class="stat-meta">
-          <span>À venir ce mois</span>
+          <span>Programmés pour la paroisse</span>
         </div>
         <SparklineChart
           :data="stats.events.sparkline || []"
@@ -333,22 +325,25 @@ onMounted(loadAll)
         />
       </div>
 
-      <div class="stat-card">
+      <!-- 5. Demandes / Transactions en attente -->
+      <div class="stat-card" @click="navigateTo('/finances')">
         <div class="stat-card-header">
           <div style="flex:1">
-            <div class="stat-label">Demandes en cours</div>
+            <div class="stat-label">Opérations en attente</div>
             <div class="stat-value-row">
               <span class="stat-value">{{ formatNumber(stats.pending_requests.value) }}</span>
-              <span class="stat-growth" :class="stats.pending_requests.growth >= 0 ? 'up' : 'down'">
-                <span>{{ stats.pending_requests.growth >= 0 ? '↑' : '↓' }}</span>
-                {{ Math.abs(stats.pending_requests.growth) }}%
+              <span v-if="stats.pending_requests.value > 0" class="stat-growth alert-pill">
+                À traiter
+              </span>
+              <span v-else class="stat-growth up">
+                À jour ✓
               </span>
             </div>
           </div>
           <div class="stat-icon pink">📋</div>
         </div>
         <div class="stat-meta">
-          <span>À traiter</span>
+          <span>En attente de validation</span>
         </div>
         <SparklineChart
           :data="stats.pending_requests.sparkline || []"
@@ -357,9 +352,13 @@ onMounted(loadAll)
           :height="32"
         />
       </div>
+
     </div>
 
+    <!-- Rangée 1 : Graphique Évolution + Répartition Ministères + Activités -->
     <div class="dashboard-grid-row">
+      
+      <!-- Graphique Présences & Dons -->
       <div class="card">
         <div class="card-header">
           <h3 class="card-title">Évolution des présences & dons</h3>
@@ -367,12 +366,11 @@ onMounted(loadAll)
             <select class="card-select" v-model="chartPeriod">
               <option>Hebdomadaire</option>
               <option>Mensuel</option>
-              <option>Annuel</option>
             </select>
           </div>
         </div>
         <div class="card-body">
-          <div class="chart-container">
+          <div class="chart-container" v-if="chartData.labels && chartData.labels.length > 0">
             <div class="chart-legend">
               <div class="chart-legend-item">
                 <span class="legend-dot" style="background:#3B82F6"></span>
@@ -380,7 +378,7 @@ onMounted(loadAll)
               </div>
               <div class="chart-legend-item">
                 <span class="legend-dot" style="background:#10B981"></span>
-                Dons (FCFA)
+                Dons ({{ stats.donations.currency || 'FCFA' }})
               </div>
             </div>
             <LineChart
@@ -389,30 +387,44 @@ onMounted(loadAll)
               :height="220"
             />
           </div>
+          <div v-else class="empty-state-block py-4">
+            <span class="empty-icon">📊</span>
+            <p>Aucune donnée enregistrée sur cette période.</p>
+          </div>
         </div>
       </div>
 
+      <!-- Répartition par Département / Ministère -->
       <div class="card">
         <div class="card-header">
-          <h3 class="card-title">Répartition des membres par département</h3>
+          <h3 class="card-title">Répartition par département</h3>
+          <router-link to="/services" class="link-see-all">Gérer</router-link>
         </div>
         <div class="card-body">
-          <DonutChart
-            :items="ministryDistribution.ministries"
-            :total="ministryDistribution.total"
-            :size="200"
-            :thickness="30"
-          />
+          <div v-if="ministryDistribution.total > 0 || (ministryDistribution.ministries && ministryDistribution.ministries.length > 0)">
+            <DonutChart
+              :items="ministryDistribution.ministries"
+              :total="ministryDistribution.total"
+              :size="200"
+              :thickness="30"
+            />
+          </div>
+          <div v-else class="empty-state-block">
+            <span class="empty-icon">🤝</span>
+            <p>Aucun membre affecté aux ministères pour le moment.</p>
+            <router-link to="/services" class="btn-empty-action">Configurer les ministères</router-link>
+          </div>
         </div>
       </div>
 
+      <!-- Activités Récentes -->
       <div class="card">
         <div class="card-header">
           <h3 class="card-title">Activités récentes</h3>
-          <a href="#" class="link-see-all">Voir tout</a>
+          <router-link to="/members" class="link-see-all">Membres</router-link>
         </div>
         <div class="card-body">
-          <div class="activity-list">
+          <div v-if="recentActivities.length > 0" class="activity-list">
             <div v-for="act in recentActivities" :key="act.id" class="activity-item">
               <div class="activity-icon" :style="{ background: act.color }">
                 {{ act.icon }}
@@ -424,24 +436,28 @@ onMounted(loadAll)
               <div class="activity-time">{{ act.time }}</div>
             </div>
           </div>
+          <div v-else class="empty-state-block">
+            <span class="empty-icon">✨</span>
+            <p>Aucune activité récente enregistrée.</p>
+          </div>
         </div>
       </div>
+
     </div>
 
+    <!-- Rangée 2 : Résumé Financier + Prochains Événements + Canaux -->
     <div class="dashboard-grid-row-2">
+      
+      <!-- Résumé Financier Réel -->
       <div class="card">
         <div class="card-header">
-          <h3 class="card-title">Résumé financier</h3>
-          <div class="card-actions">
-            <select class="card-select" v-model="finPeriod">
-              <option>Mensuel</option>
-              <option>Trimestriel</option>
-              <option>Annuel</option>
-            </select>
-          </div>
+          <h3 class="card-title">Résumé financier (Ce mois)</h3>
+          <router-link to="/finances" class="link-see-all">Module Finances</router-link>
         </div>
         <div class="card-body">
           <div class="financial-grid">
+            
+            <!-- Recettes -->
             <div class="financial-box receipts">
               <div class="financial-box-header">
                 <div class="financial-icon">🏛️</div>
@@ -450,58 +466,69 @@ onMounted(loadAll)
                 </span>
               </div>
               <div class="financial-label">Recettes</div>
-              <div class="financial-value">{{ formatCurrency(financial.receipts.total) }}</div>
-              <div class="breakdown-list">
+              <div class="financial-value">{{ formatCurrency(financial.receipts.total, financial.receipts.currency) }}</div>
+              
+              <div class="breakdown-list" v-if="financial.receipts.breakdown && financial.receipts.breakdown.length > 0">
                 <div v-for="b in financial.receipts.breakdown" :key="'r-'+b.label" class="breakdown-item">
                   <span class="breakdown-left">
                     <span>{{ b.label }}</span>
                     <span class="breakdown-bar"><span class="breakdown-bar-fill" :style="{ width: b.percentage + '%' }"></span></span>
                   </span>
-                  <span class="breakdown-value">{{ formatCurrency(b.value) }}</span>
+                  <span class="breakdown-value">{{ formatCurrency(b.value, financial.receipts.currency) }}</span>
                 </div>
+              </div>
+              <div v-else class="empty-breakdown-note">
+                Aucune recette approuvée ce mois-ci.
               </div>
             </div>
 
+            <!-- Dépenses -->
             <div class="financial-box expenses">
               <div class="financial-box-header">
                 <div class="financial-icon">📤</div>
-                <span class="financial-growth" :class="financial.expenses.growth >= 0 ? 'up' : 'down'">
+                <span class="financial-growth" :class="financial.expenses.growth <= 0 ? 'up' : 'down'">
                   {{ financial.expenses.growth >= 0 ? '↑' : '↓' }} {{ Math.abs(financial.expenses.growth) }}%
                 </span>
               </div>
               <div class="financial-label">Dépenses</div>
-              <div class="financial-value">{{ formatCurrency(financial.expenses.total) }}</div>
-              <div class="breakdown-list">
+              <div class="financial-value">{{ formatCurrency(financial.expenses.total, financial.expenses.currency) }}</div>
+              
+              <div class="breakdown-list" v-if="financial.expenses.breakdown && financial.expenses.breakdown.length > 0">
                 <div v-for="b in financial.expenses.breakdown" :key="'e-'+b.label" class="breakdown-item">
                   <span class="breakdown-left">
                     <span>{{ b.label }}</span>
                     <span class="breakdown-bar"><span class="breakdown-bar-fill" :style="{ width: b.percentage + '%' }"></span></span>
                   </span>
-                  <span class="breakdown-value">{{ formatCurrency(b.value) }}</span>
+                  <span class="breakdown-value">{{ formatCurrency(b.value, financial.expenses.currency) }}</span>
                 </div>
               </div>
+              <div v-else class="empty-breakdown-note">
+                Aucune dépense approuvée ce mois-ci.
+              </div>
             </div>
+
           </div>
 
+          <!-- Solde Net Réel -->
           <div class="net-balance">
-            <div class="net-balance-label">Solde net</div>
+            <div class="net-balance-label">Solde net du mois</div>
             <div class="net-balance-right">
-              <div class="net-balance-value">{{ formatCurrency(financial.net_balance.total) }}</div>
-              <span class="financial-growth" :class="financial.net_balance.growth >= 0 ? 'up' : 'down'">
-                {{ financial.net_balance.growth >= 0 ? '↑' : '↓' }} {{ Math.abs(financial.net_balance.growth) }}%
-              </span>
+              <div class="net-balance-value" :style="{ color: financial.net_balance.total >= 0 ? '#10B981' : '#EF4444' }">
+                {{ formatCurrency(financial.net_balance.total, financial.net_balance.currency) }}
+              </div>
             </div>
           </div>
         </div>
       </div>
 
+      <!-- Prochains Événements Réels -->
       <div class="card">
         <div class="card-header">
           <h3 class="card-title">Prochains événements</h3>
-          <a href="#" class="link-see-all">Voir tout</a>
+          <router-link to="/events" class="link-see-all">Voir tout</router-link>
         </div>
         <div class="card-body">
-          <div class="events-list">
+          <div v-if="upcomingEvents.length > 0" class="events-list">
             <div v-for="ev in upcomingEvents" :key="ev.id" class="event-item">
               <div class="event-date-block">
                 <div class="event-day">{{ ev.day }}</div>
@@ -509,79 +536,220 @@ onMounted(loadAll)
               </div>
               <div class="event-content">
                 <h4 class="event-title">{{ ev.title }}</h4>
-                <p class="event-meta">{{ ev.meta }}</p>
+                <p class="event-meta">{{ ev.location }}</p>
                 <p class="event-time">{{ ev.time }}</p>
               </div>
               <span class="event-status">{{ ev.status }}</span>
             </div>
           </div>
+          <div v-else class="empty-state-block">
+            <span class="empty-icon">📅</span>
+            <p>Aucun événement planifié à venir.</p>
+            <router-link to="/events" class="btn-empty-action">Programmer un événement</router-link>
+          </div>
         </div>
       </div>
 
+      <!-- Canaux de Communication Directs -->
       <div class="card">
         <div class="card-header">
           <h3 class="card-title">Canaux de communication</h3>
         </div>
         <div class="card-body">
           <div class="channels-grid">
-            <div v-for="ch in channels" :key="ch.key" class="channel-item">
+            <div 
+              v-for="ch in channels" 
+              :key="ch.key" 
+              class="channel-item interactive-channel"
+              @click="navigateTo(ch.route)"
+              :title="'Ouvrir ' + ch.name"
+            >
               <div class="channel-icon" :class="ch.class">{{ ch.icon }}</div>
               <div class="channel-name">{{ ch.name }}</div>
-              <div class="channel-action">{{ ch.action }}</div>
+              <div class="channel-action">{{ ch.action }} →</div>
             </div>
           </div>
         </div>
       </div>
+
     </div>
 
+    <!-- Rangée 3 : Indicateurs Numériques & Outils Pastoraux -->
     <div class="dashboard-grid-row-3">
-      <div class="device-card">
-        <div class="device-icon" :class="devices.smart_terminals.color">💻</div>
+      
+      <div class="device-card" @click="navigateTo('/live-streams')" style="cursor:pointer">
+        <div class="device-icon" :class="devices.smart_terminals?.color">🎥</div>
         <div>
-          <h4 class="device-info-label">{{ devices.smart_terminals.label }}</h4>
-          <p class="device-info-status">{{ devices.smart_terminals.status }}</p>
-          <p class="device-info-value">{{ devices.smart_terminals.value }}</p>
+          <h4 class="device-info-label">{{ devices.smart_terminals?.label || 'Régie & Diffusions' }}</h4>
+          <p class="device-info-status">{{ devices.smart_terminals?.status || 'Disponible' }}</p>
+          <p class="device-info-value">{{ devices.smart_terminals?.value || '0 diffusion' }}</p>
         </div>
       </div>
-      <div class="device-card">
-        <div class="device-icon" :class="devices.rfid_cards.color">💳</div>
+
+      <div class="device-card" @click="navigateTo('/members')" style="cursor:pointer">
+        <div class="device-icon" :class="devices.rfid_cards?.color">💳</div>
         <div>
-          <h4 class="device-info-label">{{ devices.rfid_cards.label }}</h4>
-          <p class="device-info-status">{{ devices.rfid_cards.status }}</p>
-          <p class="device-info-value">{{ devices.rfid_cards.value }}</p>
+          <h4 class="device-info-label">{{ devices.rfid_cards?.label || 'Badges & Cartes' }}</h4>
+          <p class="device-info-status">{{ devices.rfid_cards?.status || 'En attente' }}</p>
+          <p class="device-info-value">{{ devices.rfid_cards?.value || '0 membre badgé' }}</p>
         </div>
       </div>
-      <div class="device-card">
-        <div class="device-icon" :class="devices.qr_code.color">📱</div>
+
+      <div class="device-card" @click="navigateTo('/presences')" style="cursor:pointer">
+        <div class="device-icon" :class="devices.qr_code?.color">📱</div>
         <div>
-          <h4 class="device-info-label">{{ devices.qr_code.label }}</h4>
-          <p class="device-info-status">{{ devices.qr_code.status }}</p>
-          <p class="device-info-value">{{ devices.qr_code.value }}</p>
+          <h4 class="device-info-label">{{ devices.qr_code?.label || 'Scans QR Présence' }}</h4>
+          <p class="device-info-status">{{ devices.qr_code?.status || 'En attente' }}</p>
+          <p class="device-info-value">{{ devices.qr_code?.value || '0 scan ce mois' }}</p>
         </div>
       </div>
-      <div class="device-card">
-        <div class="device-icon" :class="devices.telephone.color">📱</div>
+
+      <div class="device-card" @click="navigateTo('/members')" style="cursor:pointer">
+        <div class="device-icon" :class="devices.telephone?.color">📞</div>
         <div>
-          <h4 class="device-info-label">{{ devices.telephone.label }}</h4>
-          <p class="device-info-status">{{ devices.telephone.status }}</p>
-          <p class="device-info-value">{{ devices.telephone.value }}</p>
+          <h4 class="device-info-label">{{ devices.telephone?.label || 'Fidèles Joignables' }}</h4>
+          <p class="device-info-status">{{ devices.telephone?.status || 'En attente' }}</p>
+          <p class="device-info-value">{{ devices.telephone?.value || '0 numéro' }}</p>
         </div>
       </div>
-      <div class="device-card">
-        <div class="device-icon" :class="devices.voice_assistant.color">🎙️</div>
+
+      <div class="device-card" @click="navigateTo('/assistant')" style="cursor:pointer">
+        <div class="device-icon" :class="devices.voice_assistant?.color">🕊️</div>
         <div>
-          <h4 class="device-info-label">{{ devices.voice_assistant.label }}</h4>
-          <p class="device-info-status">{{ devices.voice_assistant.status }}</p>
-          <p class="device-info-value">{{ devices.voice_assistant.value }}</p>
+          <h4 class="device-info-label">{{ devices.voice_assistant?.label || 'Assistant Vocal (IA)' }}</h4>
+          <p class="device-info-status">{{ devices.voice_assistant?.status || 'Opérationnel' }}</p>
+          <p class="device-info-value">{{ devices.voice_assistant?.value || '0 échange' }}</p>
         </div>
       </div>
-      <div class="help-card">
-        <div class="help-icon">🤖</div>
+
+      <div class="help-card" @click="navigateTo('/assistant')" style="cursor:pointer" title="Ouvrir l'assistant IA pastoral">
+        <div class="help-icon">🕊️</div>
         <div>
-          <h4 class="help-title">Besoin d'aide ?</h4>
-          <p class="help-desc">Discutez avec l'assistant IA</p>
+          <h4 class="help-title">Assistant Spirituel IA</h4>
+          <p class="help-desc">Cliquez pour poser une question</p>
         </div>
       </div>
+
     </div>
+
   </div>
 </template>
+
+<style scoped>
+/* Scoped enhancements */
+.stat-card {
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.stat-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+}
+
+.alert-pill {
+  background: #fef2f2;
+  color: #ef4444;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.church-context-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  padding: 7px 14px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1e293b;
+  max-width: 260px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+
+.church-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spin-icon {
+  display: inline-block;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { 100% { transform: rotate(360deg); } }
+
+.interactive-channel {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.interactive-channel:hover {
+  transform: translateY(-2px);
+  background: #f8fafc;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.empty-state-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 2rem 1.5rem;
+  color: #64748b;
+}
+
+.empty-icon {
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.empty-state-block p {
+  font-size: 0.88rem;
+  margin-bottom: 0.75rem;
+}
+
+.btn-empty-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #4F46E5;
+  background: #EEF2FF;
+  padding: 6px 12px;
+  border-radius: 8px;
+  text-decoration: none;
+  transition: background 0.2s;
+}
+.btn-empty-action:hover {
+  background: #e0e7ff;
+}
+
+.empty-breakdown-note {
+  font-size: 0.82rem;
+  color: #94a3b8;
+  text-align: center;
+  padding: 0.75rem 0;
+  font-style: italic;
+}
+
+.device-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.device-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.06);
+}
+
+.help-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.help-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(99, 102, 241, 0.2);
+}
+</style>

@@ -80,14 +80,28 @@ export const useFinanceStore = defineStore('finance', {
   actions: {
     async loadReferentials() {
       try {
-        const [cat, acc, meta] = await Promise.all([
+        const [catRes, accRes, metaRes] = await Promise.allSettled([
           getFinancialCategoriesReferential(),
           getFinancialAccountsReferential(),
           getTransactionMetaReferential(),
         ])
-        if (cat?.data) this.categoriesAllActive = cat.data
-        if (acc?.data) this.accountsAllActive = acc.data
-        if (meta?.data) Object.assign(this.referential, meta.data)
+        if (catRes.status === 'fulfilled' && catRes.value?.data) {
+          const catData = catRes.value.data
+          this.categoriesAllActive = catData
+        }
+        if (accRes.status === 'fulfilled' && accRes.value?.data) {
+          const accData = accRes.value.data
+          this.accountsAllActive = Array.isArray(accData) ? accData : (accData?.data || [])
+        }
+        if (metaRes.status === 'fulfilled' && metaRes.value?.data) {
+          Object.assign(this.referential, metaRes.value.data)
+        }
+        if (!this.categoriesAllActive?.income?.length && !this.categoriesAllActive?.expense?.length) {
+          await this.loadAllActiveCategories()
+        }
+        if (!this.accountsAllActive?.length) {
+          await this.loadAllActiveAccounts()
+        }
         return true
       } catch (e) {
         this.error = e?.data?.message || e.message || 'Erreur référentiels'
@@ -107,7 +121,8 @@ export const useFinanceStore = defineStore('finance', {
 
     async loadAllActiveAccounts() {
       try {
-        const { data } = await listAllActiveAccounts()
+        const res = await listAllActiveAccounts()
+        const data = res?.data?.data || res?.data
         if (Array.isArray(data)) this.accountsAllActive = data
         return this.accountsAllActive
       } catch (e) { return this.accountsAllActive }
@@ -174,8 +189,16 @@ export const useFinanceStore = defineStore('finance', {
 
     async loadAllActiveCategories() {
       try {
-        const { data } = await listAllActiveCategories()
-        if (data) this.categoriesAllActive = data
+        const res = await listAllActiveCategories()
+        const data = res?.data?.data || res?.data
+        if (data && (Array.isArray(data.income) || Array.isArray(data.expense))) {
+          this.categoriesAllActive = data
+        } else if (Array.isArray(data)) {
+          this.categoriesAllActive = {
+            income: data.filter(c => c.type === 'income'),
+            expense: data.filter(c => c.type === 'expense'),
+          }
+        }
         return this.categoriesAllActive
       } catch (e) { return this.categoriesAllActive }
     },
@@ -228,7 +251,8 @@ export const useFinanceStore = defineStore('finance', {
 
     async loadTransactionDetail(id) {
       try {
-        const { data } = await getTransaction(id)
+        const res = await getTransaction(id)
+        const data = res?.data?.data || res?.data
         this.selectedTransaction = data
         return data
       } catch (e) { return null }

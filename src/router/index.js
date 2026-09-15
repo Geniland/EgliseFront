@@ -44,12 +44,12 @@ const router = createRouter({
         {
           path: 'communication',
           name: 'communication',
-          component: () => import('@/views/AboutView.vue'),
+          component: () => import('@/views/CommunicationView.vue'),
         },
         {
           path: 'assistant',
           name: 'assistant',
-          component: () => import('@/views/AboutView.vue'),
+          component: () => import('@/views/AssistantView.vue'),
         },
         {
           path: 'requests',
@@ -59,7 +59,7 @@ const router = createRouter({
         {
           path: 'services',
           name: 'services',
-          component: () => import('@/views/AboutView.vue'),
+          component: () => import('@/views/ServicesMinistriesView.vue'),
         },
         {
           path: 'events',
@@ -79,12 +79,7 @@ const router = createRouter({
         {
           path: 'resources',
           name: 'resources',
-          component: () => import('@/views/AboutView.vue'),
-        },
-        {
-          path: 'media',
-          name: 'media',
-          component: () => import('@/views/AboutView.vue'),
+          component: () => import('@/views/ResourcesView.vue'),
         },
         {
           path: 'reports',
@@ -101,6 +96,26 @@ const router = createRouter({
           name: 'super-admin',
           component: () => import('@/views/SuperAdminView.vue'),
           meta: { requiresSuperAdmin: true },
+        },
+        {
+          path: 'live-streams',
+          name: 'live-streams',
+          component: () => import('@/views/LiveStreamsView.vue'),
+        },
+        {
+          path: 'live-streams/create',
+          name: 'live-create',
+          component: () => import('@/views/LiveStreamCreateView.vue'),
+        },
+        {
+          path: 'live-streams/:id/manage',
+          name: 'live-manage',
+          component: () => import('@/views/LiveStreamManageView.vue'),
+        },
+        {
+          path: 'live-streams/watch/:id?',
+          name: 'live-watch',
+          component: () => import('@/views/LiveStreamWatchView.vue'),
         },
       ],
     },

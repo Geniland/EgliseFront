@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import {
   listMembers, getMember, createMember, updateMember, deleteMember,
-  listMinistries, listFamilies, createFamily, getMemberStatic,
+  listMinistries, listFamilies, createFamily, getMemberStatic, toggleMemberStatus,
 } from '../api/members'
 
 function buildErrorMap(data) {
@@ -102,9 +102,29 @@ export const useMembersStore = defineStore('members', {
       this.error = ''
       try {
         const { data } = await updateMember(id, payload)
+        if (data?.member) {
+          const idx = this.members.findIndex(m => String(m.id) === String(id))
+          if (idx >= 0) this.members.splice(idx, 1, data.member)
+        }
         return { ok: true, message: data?.message, member: data?.member }
       } catch (e) {
         return { ok: false, message: e?.data?.message || e.message, errors: buildErrorMap(e?.data) }
+      } finally {
+        this.saving = false
+      }
+    },
+    async toggleStatus(id) {
+      this.saving = true
+      this.error = ''
+      try {
+        const { data } = await toggleMemberStatus(id)
+        if (data?.member) {
+          const idx = this.members.findIndex(m => String(m.id) === String(id))
+          if (idx >= 0) this.members.splice(idx, 1, data.member)
+        }
+        return { ok: true, message: data?.message, member: data?.member }
+      } catch (e) {
+        return { ok: false, message: e?.data?.message || e.message }
       } finally {
         this.saving = false
       }

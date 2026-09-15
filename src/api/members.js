@@ -13,7 +13,17 @@ export function createMember(formData) {
 }
 
 export function updateMember(id, formData) {
+  if (formData instanceof FormData) {
+    if (!formData.has('_method')) {
+      formData.append('_method', 'PUT')
+    }
+    return api.post(`/members/${id}`, formData)
+  }
   return api.put(`/members/${id}`, formData)
+}
+
+export function toggleMemberStatus(id) {
+  return api.patch(`/members/${id}/toggle-status`)
 }
 
 export function deleteMember(id) {

@@ -33,12 +33,15 @@ const form = reactive({
   status: true,
   family_id: '',
   member_type: 'Membre',
+  church_id: '',
   ministries: [],
+  remove_photo: false,
 })
 
 const formErrors = reactive({})
 const formAlert = reactive({ type: '', message: '' })
 const familyAlert = reactive({ type: '', message: '' })
+const confirmAlert = reactive({ type: '', message: '' })
 
 const isEditing = computed(() => !!form.id)
 
@@ -82,6 +85,15 @@ async function loadList() {
   await mStore.loadMembers(params)
 }
 
+function memberPhoto(m) {
+  if (!m?.photo) return null
+  if (m.photo_url) return m.photo_url
+  if (typeof m.photo === 'string' && m.photo.startsWith('http')) return m.photo
+  const apiBase = (import.meta.env && import.meta.env.VITE_API_URL) || 'http://localhost:8000/api'
+  const base = apiBase.replace(/\/api\/?$/, '')
+  return `${base}/storage/${m.photo}`
+}
+
 function onPhotoPick(e) {
   const file = e.target.files?.[0]
   if (!file) return
@@ -91,9 +103,16 @@ function onPhotoPick(e) {
     return
   }
   form.photo_file = file
+  form.remove_photo = false
   const r = new FileReader()
   r.onload = () => { form.photo_preview = r.result }
   r.readAsDataURL(file)
+}
+
+function removePhoto() {
+  form.photo_file = null
+  form.photo_preview = ''
+  form.remove_photo = true
 }
 
 function resetForm() {
@@ -105,10 +124,12 @@ function resetForm() {
   form.marital_status = ''; form.spouse_name = ''
   form.conversion_date = ''; form.baptism_date = ''; form.membership_date = ''
   form.photo_file = null; form.photo_preview = ''
+  form.remove_photo = false
   form.emergency_contact = ''; form.emergency_phone = ''
   form.status = true
   form.family_id = ''
   form.member_type = 'Membre'
+  form.church_id = authStore.currentChurchId ? String(authStore.currentChurchId) : (authStore.user?.church_id ? String(authStore.user.church_id) : '')
   form.ministries = []
   formAlert.type = ''; formAlert.message = ''
   Object.keys(formErrors).forEach(k => delete formErrors[k])
@@ -160,10 +181,10 @@ const openEdit = async (member) => {
   form.status = member.status !== false
   form.family_id = member.family_id ? String(member.family_id) : ''
   form.member_type = member.member_type || 'Membre'
+  form.church_id = member.church_id ? String(member.church_id) : (member.church?.id ? String(member.church.id) : '')
   form.ministries = (member.ministries || []).map(m => String(m.id))
   if (member.photo) {
-    const base = 'http://localhost:8000/storage/'
-    form.photo_preview = member.photo.startsWith('http') ? member.photo : base + member.photo
+    form.photo_preview = memberPhoto(member)
   }
   showEditModal.value = true
 }
@@ -189,13 +210,20 @@ function buildFormPayload() {
     'conversion_date','baptism_date','membership_date','emergency_contact',
     'emergency_phone','member_type'
   ]
-  fields.forEach(f => { if (form[f]) fd.append(f, form[f]) })
+  fields.forEach(f => {
+    const val = form[f]
+    if (val !== null && val !== undefined && val !== '') {
+      fd.append(f, val)
+    }
+  })
   if (form.family_id) fd.append('family_id', form.family_id)
+  if (form.church_id) fd.append('church_id', form.church_id)
   fd.append('status', form.status ? '1' : '0')
   if (form.ministries?.length) {
     form.ministries.forEach((id, i) => fd.append(`ministries[${i}]`, id))
   }
   if (form.photo_file) fd.append('photo', form.photo_file)
+  if (form.remove_photo) fd.append('remove_photo', '1')
   if (isEditing.value) fd.append('_method', 'PUT')
   return fd
 }
@@ -229,11 +257,15 @@ async function submitForm() {
 function askToggle(member) {
   confirmTarget.value = member
   confirmAction.value = member.status ? 'disable' : 'enable'
+  confirmAlert.type = ''
+  confirmAlert.message = ''
   showConfirmModal.value = true
 }
 function askDelete(member) {
   confirmTarget.value = member
   confirmAction.value = 'delete'
+  confirmAlert.type = ''
+  confirmAlert.message = ''
   showConfirmModal.value = true
 }
 
@@ -244,31 +276,20 @@ async function confirmActionFn() {
     const r = await mStore.remove(m.id)
     if (r.ok) {
       showConfirmModal.value = false
+      confirmTarget.value = null
       await loadList()
     } else {
-      familyAlert.type = 'danger'
-      familyAlert.message = r.message
+      confirmAlert.type = 'danger'
+      confirmAlert.message = r.message || 'Erreur lors de la suppression'
     }
   } else if (confirmAction.value === 'disable' || confirmAction.value === 'enable') {
-    const payload = new FormData()
-    payload.append('_method', 'PUT')
-    Object.keys(m).forEach(k => {
-      if (k === 'ministries' || k === 'family') return
-      if (k === 'status') { payload.append('status', confirmAction.value === 'enable' ? '1' : '0'); return }
-      const v = m[k]
-      if (v === null || v === undefined) return
-      if (k.endsWith('_date') && v) payload.append(k, String(v).slice(0, 10))
-      else payload.append(k, v)
-    })
-    if (m.family_id) payload.append('family_id', m.family_id)
-    const r = await mStore.update(m.id, payload)
-    if (r.ok && r.member) {
-      const idx = mStore.members.findIndex(x => String(x.id) === String(m.id))
-      if (idx >= 0) mStore.members.splice(idx, 1, r.member)
+    const r = await mStore.toggleStatus(m.id)
+    if (r.ok) {
       showConfirmModal.value = false
+      confirmTarget.value = null
     } else {
-      familyAlert.type = 'danger'
-      familyAlert.message = r.message
+      confirmAlert.type = 'danger'
+      confirmAlert.message = r.message || 'Erreur lors du changement de statut'
     }
   }
 }
@@ -414,12 +435,13 @@ onMounted(async () => {
           <tr v-for="m in mStore.members" :key="m.id">
             <td data-label="Membre">
               <div class="sa-user-cell">
-                <div class="sa-user-avatar" v-if="m.photo" :style="{backgroundSize:'cover',backgroundImage:`url(http://localhost:8000/storage/${m.photo})`}"></div>
+                <div class="sa-user-avatar" v-if="memberPhoto(m)" :style="{backgroundSize:'cover',backgroundImage:`url(${memberPhoto(m)})`}"></div>
                 <div class="sa-user-avatar" v-else :style="{background: avatarColorFromId(m.id)}">{{ initials(m.first_name, m.last_name) }}</div>
                 <div>
                   <div class="sa-user-name">{{ m.first_name }} {{ m.last_name }}</div>
                   <div class="sa-user-sub">
                     {{ m.profession || (m.city ? '📍 ' + m.city : '—') }}
+                    <span v-if="m.church?.name" class="church-sub-tag">• ⛪ {{ m.church.name }}</span>
                   </div>
                 </div>
               </div>
@@ -450,7 +472,7 @@ onMounted(async () => {
             </td>
             <td data-label="Accès">
               <label class="toggle-switch">
-                <input type="checkbox" :checked="!!m.status" @change="askToggle(m)" />
+                <input type="checkbox" :checked="!!m.status" @click.prevent="askToggle(m)" />
                 <span class="slider"></span>
               </label>
             </td>
@@ -505,16 +527,31 @@ onMounted(async () => {
           <div v-if="formAlert.message" :class="['form-alert', formAlert.type]">{{ formAlert.message }}</div>
 
           <div class="form-section-title">📷 Photo & identité</div>
+          <div class="form-row" v-if="authStore.isAdmin || (authStore.churches && authStore.churches.length > 1)">
+            <div class="form-group wide">
+              <label>Église de rattachement</label>
+              <select v-model="form.church_id">
+                <option value="">— Église active par défaut —</option>
+                <option v-for="c in authStore.churches" :key="c.id" :value="String(c.id)">{{ c.name }} ({{ c.code }})</option>
+              </select>
+            </div>
+          </div>
+
           <div class="form-row row-3">
             <div class="form-group photo-group">
               <div class="photo-preview">
                 <img v-if="form.photo_preview" :src="form.photo_preview" alt="preview" />
                 <div v-else class="photo-placeholder">📷<br/><span>Aucune photo</span></div>
               </div>
-              <label class="btn-secondary" style="margin-top:8px;text-align:center;cursor:pointer">
-                Choisir photo
-                <input type="file" accept="image/*" style="display:none" @change="onPhotoPick" />
-              </label>
+              <div style="display:flex; gap:8px; justify-content:center; margin-top:8px;">
+                <label class="btn-secondary" style="text-align:center;cursor:pointer;padding:6px 12px;font-size:12px;">
+                  Choisir photo
+                  <input type="file" accept="image/*" style="display:none" @change="onPhotoPick" />
+                </label>
+                <button v-if="form.photo_preview" type="button" class="btn-secondary" style="color:var(--danger);cursor:pointer;padding:6px 10px;font-size:12px;" @click="removePhoto" title="Supprimer la photo">
+                  ✕
+                </button>
+              </div>
               <div class="sa-subtle">JPG/PNG, 2 Mo max</div>
             </div>
 
@@ -719,6 +756,7 @@ onMounted(async () => {
         <h3 v-if="confirmAction==='delete'">Supprimer ce membre ?</h3>
         <h3 v-else-if="confirmAction==='disable'">Désactiver {{ confirmTarget?.first_name }} ?</h3>
         <h3 v-else>Réactiver {{ confirmTarget?.first_name }} ?</h3>
+        <div v-if="confirmAlert.message" :class="['form-alert', confirmAlert.type]" style="margin-top: 10px;">{{ confirmAlert.message }}</div>
         <p class="confirm-text">
           <template v-if="confirmAction==='delete'">Cette action est irréversible. Le membre sera supprimé (suppression logique).</template>
           <template v-else-if="confirmAction==='disable'">Ce membre ne pourra plus se connecter si c'est un utilisateur.</template>
@@ -1004,4 +1042,11 @@ onMounted(async () => {
 .confirm-icon.success { background: #d1fae5; }
 .confirm-dialog h3 { margin: 0 0 8px; color: var(--text-primary); font-size: 17px; }
 .confirm-text { color: var(--text-muted); font-size: 14px; margin: 0 0 16px; }
+
+.church-sub-tag {
+  display: inline-block;
+  font-weight: 500;
+  color: #4f46e5;
+  margin-left: 4px;
+}
 </style>
