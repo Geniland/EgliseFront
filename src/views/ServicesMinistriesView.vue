@@ -32,10 +32,9 @@ const formErrors = reactive({})
 const selectedNewMemberId = ref('')
 
 onMounted(async () => {
-  await Promise.all([
-    minStore.fetchMinistries(),
-    memStore.loadMembers({ per_page: 100 })
-  ])
+  const requests = [minStore.fetchMinistries()]
+  if (authStore.hasPermission('members.view')) requests.push(memStore.loadMembers({ per_page: 100 }))
+  await Promise.all(requests)
 })
 
 // Filtered ministries
@@ -61,10 +60,11 @@ const availableMembersToAdd = computed(() => {
 })
 
 // Permissions check
-const canManage = computed(() => {
-  const roleId = Number(authStore.user?.role_id)
-  return roleId === 1 || roleId === 2 || roleId === 5
-})
+const canCreate = computed(() => authStore.hasPermission('ministries.create'))
+const canUpdate = computed(() => authStore.hasPermission('ministries.update'))
+const canDelete = computed(() => authStore.hasPermission('ministries.delete'))
+const canViewMembers = computed(() => authStore.hasPermission('members.view'))
+const canManageMembers = computed(() => canUpdate.value && canViewMembers.value)
 
 // Actions: Open Create/Edit Modal
 const openCreateModal = () => {
@@ -169,7 +169,7 @@ const getMemberPhoto = (member) => {
         <h1>🤲 Services & Ministères</h1>
         <p>Pilotez les départements, les équipes d'engagement et la mobilisation des fidèles</p>
       </div>
-      <div class="header-actions" v-if="canManage">
+      <div class="header-actions" v-if="canCreate">
         <button class="btn-primary" @click="openCreateModal">
           <span class="btn-icon">＋</span> Nouveau Ministère
         </button>
@@ -253,7 +253,7 @@ const getMemberPhoto = (member) => {
       <div class="empty-icon">🤝</div>
       <h3>Aucun ministère trouvé</h3>
       <p>Créez votre premier ministère ou ajustez vos filtres de recherche.</p>
-      <button v-if="canManage" class="btn-primary" @click="openCreateModal" style="margin-top: 15px;">
+      <button v-if="canCreate" class="btn-primary" @click="openCreateModal" style="margin-top: 15px;">
         + Créer un ministère
       </button>
     </div>
@@ -266,8 +266,8 @@ const getMemberPhoto = (member) => {
             {{ m.status ? 'Actif' : 'Inactif' }}
           </div>
           <div class="card-actions" v-if="canManage">
-            <button class="action-btn" @click="openEditModal(m)" title="Modifier">✏️</button>
-            <button class="action-btn btn-del" @click="confirmDelete(m)" title="Supprimer">🗑️</button>
+            <button v-if="canUpdate" class="action-btn" @click="openEditModal(m)" title="Modifier">✏️</button>
+            <button v-if="canDelete" class="action-btn btn-del" @click="confirmDelete(m)" title="Supprimer">🗑️</button>
           </div>
         </div>
 
@@ -302,7 +302,7 @@ const getMemberPhoto = (member) => {
             <span class="members-icon">👥</span>
             <strong>{{ m.members_count || 0 }}</strong> membre(s)
           </div>
-          <button class="btn-members" @click="openMembersModal(m)">
+          <button v-if="canViewMembers" class="btn-members" @click="openMembersModal(m)">
             Membres ➔
           </button>
         </div>
@@ -344,7 +344,7 @@ const getMemberPhoto = (member) => {
               <span v-else class="text-muted">—</span>
             </td>
             <td>
-              <button class="pill-btn" @click="openMembersModal(m)">
+              <button v-if="canViewMembers" class="pill-btn" @click="openMembersModal(m)">
                 👥 {{ m.members_count || 0 }} membre(s)
               </button>
             </td>
@@ -355,9 +355,9 @@ const getMemberPhoto = (member) => {
             </td>
             <td style="text-align: right;">
               <div class="inline-actions">
-                <button class="action-btn" @click="openMembersModal(m)" title="Gérer les membres">👥</button>
-                <button v-if="canManage" class="action-btn" @click="openEditModal(m)" title="Modifier">✏️</button>
-                <button v-if="canManage" class="action-btn btn-del" @click="confirmDelete(m)" title="Supprimer">🗑️</button>
+                <button v-if="canViewMembers" class="action-btn" @click="openMembersModal(m)" title="Voir les membres">👥</button>
+                <button v-if="canUpdate" class="action-btn" @click="openEditModal(m)" title="Modifier">✏️</button>
+                <button v-if="canDelete" class="action-btn btn-del" @click="confirmDelete(m)" title="Supprimer">🗑️</button>
               </div>
             </td>
           </tr>
@@ -427,7 +427,7 @@ const getMemberPhoto = (member) => {
 
           <div class="modal-footer">
             <button type="button" class="btn-secondary" @click="showFormModal = false">Annuler</button>
-            <button type="submit" class="btn-primary" :disabled="minStore.saving">
+            <button v-if="authStore.hasPermission(form.id ? 'ministries.update' : 'ministries.create')" type="submit" class="btn-primary" :disabled="minStore.saving">
               {{ minStore.saving ? 'Enregistrement...' : 'Enregistrer' }}
             </button>
           </div>
@@ -448,7 +448,7 @@ const getMemberPhoto = (member) => {
 
         <div class="modal-body">
           <!-- Ajouter un membre -->
-          <div class="add-member-bar" v-if="canManage">
+          <div class="add-member-bar" v-if="canManageMembers">
             <select v-model="selectedNewMemberId" class="form-control flex-1">
               <option value="">-- Sélectionner un membre à ajouter --</option>
               <option v-for="m in availableMembersToAdd" :key="m.id" :value="m.id">
@@ -487,7 +487,7 @@ const getMemberPhoto = (member) => {
                   <small>{{ mem.phone || mem.email || 'Membre actif' }}</small>
                 </div>
                 <button 
-                  v-if="canManage"
+                  v-if="canManageMembers"
                   class="btn-remove-member" 
                   @click="handleRemoveMember(mem.id)" 
                   title="Retirer du ministère"
@@ -512,7 +512,7 @@ const getMemberPhoto = (member) => {
         <p>Êtes-vous sûr de vouloir supprimer le ministère <strong>{{ targetMinistry?.name }}</strong> ? Cette action détachera tous les membres associés.</p>
         <div class="modal-footer">
           <button class="btn-secondary" @click="showDeleteConfirm = false">Annuler</button>
-          <button class="btn-danger" @click="executeDelete">Confirmer la suppression</button>
+          <button v-if="canDelete" class="btn-danger" @click="executeDelete">Confirmer la suppression</button>
         </div>
       </div>
     </div>

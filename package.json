@@ -13,6 +13,7 @@
     "format": "prettier --write --experimental-cli src/"
   },
   "dependencies": {
+    "jsqr": "1.4.0",
     "pinia": "^4.0.2",
     "qrcode.vue": "^3.10.0",
     "vue": "rc",

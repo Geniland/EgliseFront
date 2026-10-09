@@ -22,11 +22,11 @@
       </div>
 
       <div class="header-actions">
-        <button class="btn-secondary-action" @click="showObsModal = true">
+        <button v-if="authStore.hasPermission('live_streams.configure')" class="btn-secondary-action" @click="showObsModal = true">
           <span>⚙️</span>
           <span>Guide OBS Studio</span>
         </button>
-        <button class="btn-primary-action" @click="openCreateModal">
+        <button v-if="authStore.hasPermission('live_streams.create')" class="btn-primary-action" @click="openCreateModal">
           <span>✨</span>
           <span>+ Programmer un direct</span>
         </button>
@@ -62,6 +62,7 @@
           </router-link>
 
           <router-link
+            v-if="canManageStreams"
             :to="{ name: 'live-manage', params: { id: activeLive.id } }"
             class="btn-hero-secondary"
           >
@@ -225,7 +226,9 @@
       >
         <LiveCard
           :stream="stream"
-          :canManage="true"
+          :canManage="canManageStreams"
+          :canPublish="authStore.hasPermission('live_streams.publish')"
+          :canDelete="authStore.hasPermission('live_streams.delete')"
           @publish-resource="openPublishModal"
           @delete="handleDelete"
           @share-success="onShareSuccess"
@@ -253,7 +256,7 @@
           >
             Réinitialiser les filtres
           </button>
-          <button class="btn-primary-action" @click="openCreateModal">
+          <button v-if="authStore.hasPermission('live_streams.create')" class="btn-primary-action" @click="openCreateModal">
             <span>✨</span>
             <span>+ Programmer un direct</span>
           </button>
@@ -540,11 +543,17 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useLiveStreamStore } from '@/stores/liveStream'
+import { useAuthStore } from '@/stores/auth'
 import LiveCard from '@/components/live/LiveCard.vue'
 import api from '@/utils/api'
 
 const router = useRouter()
 const store = useLiveStreamStore()
+const authStore = useAuthStore()
+const canManageStreams = computed(() => authStore.hasAnyPermission([
+  'live_streams.create', 'live_streams.update', 'live_streams.delete',
+  'live_streams.publish', 'live_streams.end', 'live_streams.configure', 'live_streams.replay',
+]))
 
 // State
 const selectedTab = ref('all')

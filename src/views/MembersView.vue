@@ -18,6 +18,9 @@ const showConfirmModal = ref(false)
 const confirmTarget = ref(null)
 const confirmAction = ref('')
 const showFamilyModal = ref(false)
+const showMemberQrModal = ref(false)
+const currentMemberQr = ref(null)
+const loadingMemberQr = ref(false)
 const newFamily = reactive({ family_name: '', phone: '', address: '' })
 
 const form = reactive({
@@ -147,7 +150,50 @@ const closeModals = () => {
   showEditModal.value = false
   showConfirmModal.value = false
   showFamilyModal.value = false
+  showMemberQrModal.value = false
+  currentMemberQr.value = null
   resetFamily()
+}
+
+const openMemberQr = async (member) => {
+  loadingMemberQr.value = true
+  currentMemberQr.value = { member: member, data: null, error: null }
+  showMemberQrModal.value = true
+  try {
+    const data = await mStore.loadMemberQrCode(member.id, 280)
+    if (data) {
+      currentMemberQr.value.data = data
+    } else {
+      currentMemberQr.value.error = 'Impossible de récupérer le QR code. Vérifiez vos permissions.'
+    }
+  } catch (e) {
+    currentMemberQr.value.error = e?.message || 'Erreur lors du chargement.'
+  } finally {
+    loadingMemberQr.value = false
+  }
+}
+
+function downloadMemberQrPng() {
+  const d = currentMemberQr.value?.data?.qr_data_url
+  if (!d) return
+  const name = `QR_${currentMemberQr.value.member.member_code || currentMemberQr.value.member.id}.png`
+  const a = document.createElement('a')
+  a.href = d
+  a.download = name
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+}
+function copyMemberQrPayload() {
+  const d = currentMemberQr.value?.data?.qr_data_string
+  if (!d) return
+  navigator?.clipboard?.writeText(d)?.then(() => {
+    const el = document.createElement('div')
+    el.textContent = '✅ Contenu QR copié dans le presse-papier'
+    el.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#059669;color:#fff;padding:10px 18px;border-radius:10px;z-index:99999;box-shadow:0 6px 20px rgba(0,0,0,.2);font-size:13px;font-weight:600;'
+    document.body.appendChild(el)
+    setTimeout(() => el.remove(), 1800)
+  })
 }
 
 const openCreate = async () => {
@@ -356,7 +402,7 @@ onMounted(async () => {
         <h1 class="page-title">👥 Gestion des Membres</h1>
         <p class="page-subtitle">Créez, modifiez et organisez les membres de l'église</p>
       </div>
-      <button class="btn-primary" @click="openCreate">
+      <button v-if="authStore.hasPermission('members.create')" class="btn-primary" @click="openCreate">
         ➕ Nouveau membre
       </button>
     </div>
@@ -472,14 +518,15 @@ onMounted(async () => {
             </td>
             <td data-label="Accès">
               <label class="toggle-switch">
-                <input type="checkbox" :checked="!!m.status" @click.prevent="askToggle(m)" />
+                <input v-if="authStore.hasPermission('members.update')" type="checkbox" :checked="!!m.status" @click.prevent="askToggle(m)" />
                 <span class="slider"></span>
               </label>
             </td>
             <td data-label="Actions">
               <div class="row-actions">
-                <button class="btn-icon edit" @click="openEdit(m)" title="Modifier">✏️</button>
-                <button class="btn-icon delete" @click="askDelete(m)" title="Supprimer">🗑️</button>
+                <button class="btn-icon" style="background:#ecfeff;color:#0e7490" @click="openMemberQr(m)" title="QR Code membre">🪪</button>
+                <button v-if="authStore.hasPermission('members.update')" class="btn-icon edit" @click="openEdit(m)" title="Modifier">✏️</button>
+                <button v-if="authStore.hasPermission('members.delete')" class="btn-icon delete" @click="askDelete(m)" title="Supprimer">🗑️</button>
               </div>
             </td>
           </tr>
@@ -640,7 +687,7 @@ onMounted(async () => {
                     {{ f.family_name }} ({{ f.family_code }})
                   </option>
                 </select>
-                <button class="btn-secondary" @click="openAddFamily" title="Nouvelle famille">➕ Famille</button>
+                <button v-if="authStore.hasPermission('members.create')" class="btn-secondary" @click="openAddFamily" title="Nouvelle famille">➕ Famille</button>
               </div>
             </div>
           </div>
@@ -698,7 +745,7 @@ onMounted(async () => {
         </div>
         <div class="modal-footer">
           <button class="btn-secondary" @click="closeModals">Annuler</button>
-          <button class="btn-primary" :disabled="mStore.saving" @click="submitForm">
+          <button v-if="authStore.hasPermission(isEditing ? 'members.update' : 'members.create')" class="btn-primary" :disabled="mStore.saving" @click="submitForm">
             <span v-if="mStore.saving">💾 Enregistrement...</span>
             <span v-else>{{ isEditing ? '💾 Enregistrer' : '✅ Créer le membre' }}</span>
           </button>
@@ -734,7 +781,62 @@ onMounted(async () => {
         </div>
         <div class="modal-footer">
           <button class="btn-secondary" @click="closeModals">Annuler</button>
-          <button class="btn-primary" @click="submitFamily">Créer & associer</button>
+          <button v-if="authStore.hasPermission('members.create')" class="btn-primary" @click="submitFamily">Créer &amp; associer</button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
+
+  <!-- Modal QR Code Membre -->
+  <Teleport to="body">
+    <div v-if="showMemberQrModal && currentMemberQr" class="modal-backdrop" @click.self="closeModals">
+      <div class="modal-dialog" style="max-width:520px">
+        <div class="modal-header">
+          <h3>🪪 QR Code Membre</h3>
+          <button class="modal-close" @click="closeModals">✕</button>
+        </div>
+        <div class="modal-body" style="text-align:center">
+          <div style="margin-bottom:14px;text-align:left">
+            <div style="font-weight:700;color:var(--text-primary);font-size:16px">
+              {{ currentMemberQr.member.first_name }} {{ currentMemberQr.member.last_name }}
+            </div>
+            <div style="font-size:13px;color:var(--text-muted);margin-top:2px">
+              Matricule : <code class="member-code" style="padding:2px 8px;border-radius:6px;background:#f1f5f9">{{ currentMemberQr.member.member_code || '—' }}</code>
+              <span v-if="currentMemberQr.member.church?.name" style="margin-left:10px">⛪ {{ currentMemberQr.member.church.name }}</span>
+            </div>
+          </div>
+
+          <div v-if="loadingMemberQr" style="padding:40px 20px;color:var(--text-muted)">
+            ⏳ Chargement du QR code...
+          </div>
+          <div v-else-if="currentMemberQr.error" class="form-alert danger" style="margin:0 0 8px">
+            {{ currentMemberQr.error }}
+          </div>
+          <div v-else-if="currentMemberQr.data">
+            <div style="background:#fff;padding:20px;border-radius:16px;display:inline-block;border:3px dashed var(--primary);margin-bottom:14px">
+              <img
+                v-if="currentMemberQr.data.qr_data_url"
+                :src="currentMemberQr.data.qr_data_url"
+                alt="QR membre"
+                style="width:260px;height:260px;display:block"
+              />
+            </div>
+            <div style="font-size:13px;color:var(--text-muted);margin-bottom:14px">
+              Présentez ce QR code à l'accueil pour être enregistré automatiquement.
+            </div>
+            <div class="form-row" style="gap:8px;margin:0">
+              <button class="btn-secondary" style="flex:1" @click="copyMemberQrPayload" :disabled="!currentMemberQr.data.qr_data_string">
+                📋 Copier contenu
+              </button>
+              <button class="btn-primary" style="flex:1" @click="downloadMemberQrPng" :disabled="!currentMemberQr.data.qr_data_url">
+                ⬇️ Télécharger PNG
+              </button>
+            </div>
+            <div v-if="currentMemberQr.data.qr_token" style="margin-top:12px;padding:10px 12px;background:#f8fafc;border:1px solid var(--border);border-radius:10px;text-align:left;font-family:ui-monospace, Menlo, monospace;font-size:12px;color:var(--text-secondary);word-break:break-all">
+              <div style="font-weight:600;margin-bottom:4px;color:var(--text-primary);font-family:inherit">Token permanent :</div>
+              {{ currentMemberQr.data.qr_token }}
+            </div>
+          </div>
         </div>
       </div>
     </div>

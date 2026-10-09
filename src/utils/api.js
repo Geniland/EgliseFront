@@ -1,6 +1,9 @@
 const DEFAULT_BASE_URL = 'http://localhost:8000/api'
 
-const baseURL = (import.meta.env && import.meta.env.VITE_API_URL) || DEFAULT_BASE_URL
+const mobileBaseURL = typeof window !== 'undefined'
+  ? window.__CHURCH_MOBILE_API_BASE_URL__
+  : null
+const baseURL = mobileBaseURL || (import.meta.env && import.meta.env.VITE_API_URL) || DEFAULT_BASE_URL
 
 const HEADER_CHURCH_CONTEXT = 'X-Church-Context'
 
@@ -28,7 +31,9 @@ const getChurchContext = () => {
 const setToken = (t) => {
   try {
     localStorage.setItem('auth_token', t || '')
-  } catch (e) { /* ignore */ }
+  } catch (e) {
+    /* ignore */
+  }
 }
 
 const clearAuth = () => {
@@ -37,7 +42,17 @@ const clearAuth = () => {
     localStorage.removeItem('auth_user')
     localStorage.removeItem('current_church_id')
     localStorage.removeItem('auth_churches')
-  } catch (e) { /* ignore */ }
+  } catch (e) {
+    /* ignore */
+  }
+
+  try {
+    if (window.__CHURCH_MOBILE_NATIVE__ && window.flutter_inappwebview?.callHandler) {
+      window.flutter_inappwebview.callHandler('churchNativeLogout').catch(() => {})
+    }
+  } catch (e) {
+    /* ignore when running outside the Flutter WebView */
+  }
 }
 
 const handleResponse = async (res) => {
@@ -51,9 +66,11 @@ const handleResponse = async (res) => {
 
   if (res.status === 401) {
     clearAuth()
-    if (typeof window !== 'undefined' &&
+    if (
+      typeof window !== 'undefined' &&
       window.location &&
-      !['/login', '/register'].some(p => window.location.pathname.startsWith(p))) {
+      !['/login', '/register'].some((p) => window.location.pathname.startsWith(p))
+    ) {
       window.location.href = '/login'
     }
   }

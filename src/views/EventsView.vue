@@ -1,9 +1,11 @@
 <script setup>
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useEventsStore } from '../stores/events'
+import { useAuthStore } from '../stores/auth'
 import SparklineChart from '@/components/dashboard/SparklineChart.vue'
 
 const eStore = useEventsStore()
+const authStore = useAuthStore()
 
 const activeTab = ref('overview')
 const search = ref('')
@@ -297,7 +299,7 @@ onMounted(async () => {
         <p class="page-subtitle">Planifiez, publiez et suivez toutes les activités de l'église</p>
       </div>
       <div class="page-header-actions">
-        <button class="sa-btn sa-btn-primary" @click="openCreate">➕ Nouvel événement</button>
+        <button v-if="authStore.hasPermission('events.create')" class="sa-btn sa-btn-primary" @click="openCreate">➕ Nouvel événement</button>
       </div>
     </div>
 
@@ -494,22 +496,22 @@ onMounted(async () => {
               </td>
               <td><span :class="statusBadgeClass(ev.status)">{{ ev.status_label || ev.status }}</span></td>
               <td>
-                <button class="btn-icon edit" :title="ev.is_featured ? 'Retirer de la une' : 'Mettre en une'" @click="toggleFeaturedFn(ev)">
+                <button v-if="authStore.hasPermission('events.update')" class="btn-icon edit" :title="ev.is_featured ? 'Retirer de la une' : 'Mettre en une'" @click="toggleFeaturedFn(ev)">
                   {{ ev.is_featured ? '⭐' : '☆' }}
                 </button>
               </td>
               <td>
                 <div class="row-actions" style="justify-content:flex-end">
                   <button class="btn-icon edit" title="Voir détails" @click="openDetail(ev)">👁️</button>
-                  <button class="btn-icon edit" title="Modifier" @click="openEdit(ev)">✏️</button>
+                  <button v-if="authStore.hasPermission('events.update')" class="btn-icon edit" title="Modifier" @click="openEdit(ev)">✏️</button>
                   <template v-if="ev.status === 'draft'">
-                    <button class="btn-icon edit" title="Publier" @click="askPublish(ev)">📢</button>
+                    <button v-if="authStore.hasPermission('events.update')" class="btn-icon edit" title="Publier" @click="askPublish(ev)">📢</button>
                   </template>
                   <template v-else-if="ev.status === 'published'">
-                    <button class="btn-icon edit" title="Marquer terminé" @click="askComplete(ev)">✅</button>
-                    <button class="btn-icon delete" title="Annuler" @click="askCancelEvent(ev)">❌</button>
+                    <button v-if="authStore.hasPermission('events.update')" class="btn-icon edit" title="Marquer terminé" @click="askComplete(ev)">✅</button>
+                    <button v-if="authStore.hasPermission('events.update')" class="btn-icon delete" title="Annuler" @click="askCancelEvent(ev)">❌</button>
                   </template>
-                  <button class="btn-icon delete" title="Supprimer" @click="askDelete(ev)">🗑️</button>
+                  <button v-if="authStore.hasPermission('events.delete')" class="btn-icon delete" title="Supprimer" @click="askDelete(ev)">🗑️</button>
                 </div>
               </td>
             </tr>
@@ -575,7 +577,7 @@ onMounted(async () => {
               <div v-if="ev.description" style="font-size:13px;color:#4b5563;line-height:1.5">{{ ev.description }}</div>
             </div>
             <div style="display:flex;align-items:flex-start">
-              <button class="btn-icon edit" title="Modifier" @click.stop="openEdit(ev)">✏️</button>
+              <button v-if="authStore.hasPermission('events.update')" class="btn-icon edit" title="Modifier" @click.stop="openEdit(ev)">✏️</button>
             </div>
           </div>
         </div>
@@ -693,7 +695,7 @@ onMounted(async () => {
         </div>
         <div class="modal-footer">
           <button class="sa-btn sa-btn-secondary" @click="showEventModal = false">Annuler</button>
-          <button class="sa-btn sa-btn-primary" @click="submitForm" :disabled="eStore.saving">
+          <button v-if="authStore.hasPermission(isEditing ? 'events.update' : 'events.create')" class="sa-btn sa-btn-primary" @click="submitForm" :disabled="eStore.saving">
             {{ eStore.saving ? '⏳ Enregistrement...' : (isEditing ? '💾 Enregistrer' : '✅ Créer l\'événement') }}
           </button>
         </div>
@@ -796,13 +798,13 @@ onMounted(async () => {
           <button class="sa-btn sa-btn-secondary" @click="showDetailModal = false">Fermer</button>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <template v-if="detailEvent.status === 'draft'">
-              <button class="sa-btn sa-btn-primary" @click="askPublish(detailEvent); showDetailModal=false">📢 Publier</button>
+              <button v-if="authStore.hasPermission('events.update')" class="sa-btn sa-btn-primary" @click="askPublish(detailEvent); showDetailModal=false">📢 Publier</button>
             </template>
             <template v-else-if="detailEvent.status === 'published'">
-              <button class="sa-btn sa-btn-secondary" @click="askComplete(detailEvent); showDetailModal=false">✅ Terminé</button>
-              <button class="sa-btn sa-btn-secondary" style="color:#b91c1c;border-color:#fecaca;background:#fef2f2" @click="askCancelEvent(detailEvent); showDetailModal=false">❌ Annuler</button>
+              <button v-if="authStore.hasPermission('events.update')" class="sa-btn sa-btn-secondary" @click="askComplete(detailEvent); showDetailModal=false">✅ Terminé</button>
+              <button v-if="authStore.hasPermission('events.update')" class="sa-btn sa-btn-secondary" style="color:#b91c1c;border-color:#fecaca;background:#fef2f2" @click="askCancelEvent(detailEvent); showDetailModal=false">❌ Annuler</button>
             </template>
-            <button class="sa-btn sa-btn-primary" @click="openEdit(detailEvent); showDetailModal=false">✏️ Modifier</button>
+            <button v-if="authStore.hasPermission('events.update')" class="sa-btn sa-btn-primary" @click="openEdit(detailEvent); showDetailModal=false">✏️ Modifier</button>
           </div>
         </div>
       </div>

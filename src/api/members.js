@@ -30,6 +30,14 @@ export function deleteMember(id) {
   return api.delete(`/members/${id}`)
 }
 
+export function getMemberQrCode(id, size = 280) {
+  return api.get(`/members/${id}/qr-code`, { params: { size } })
+}
+
+export function getMyQrCode(size = 280) {
+  return api.get('/me/qr-code', { params: { size } })
+}
+
 export function listMinistries() {
   return api.get('/referentiels/ministries')
 }

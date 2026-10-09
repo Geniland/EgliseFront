@@ -14,14 +14,11 @@ const searchQuery = ref('')
 
 // Computed User Info & Roles
 const currentUser = computed(() => authStore.user)
-const isChurchAdmin = computed(() => {
-  const roleId = Number(currentUser.value?.role_id)
-  return roleId === 1 || roleId === 2
-})
-const isResponsableOrAdmin = computed(() => {
-  const roleId = Number(currentUser.value?.role_id)
-  return roleId === 1 || roleId === 2 || roleId === 5
-})
+const canViewResources = computed(() => authStore.hasPermission('resources.view'))
+const canViewFormations = computed(() => authStore.hasPermission('formations.view'))
+const isResponsableOrAdmin = computed(() => authStore.hasAnyPermission([
+  'resources.create', 'resources.update', 'formations.create', 'formations.update',
+]))
 
 // State
 const categories = computed(() => store.categories || [])
@@ -73,11 +70,11 @@ onMounted(async () => {
 
 const loadData = async () => {
   try {
-    await Promise.all([
-      store.fetchCategories(),
-      store.fetchResources(),
-      store.fetchFormations()
-    ])
+    const requests = []
+    if (canViewResources.value || canViewFormations.value) requests.push(store.fetchCategories())
+    if (canViewResources.value) requests.push(store.fetchResources())
+    if (canViewFormations.value) requests.push(store.fetchFormations())
+    await Promise.all(requests)
   } catch (e) {
     console.error('Erreur chargement données', e)
   }
@@ -564,34 +561,34 @@ const getItemCover = (item) => {
         <p>Bibliothèque chrétienne, documents pastoraux, e-Learning et supports d'édification</p>
       </div>
       <div class="sa-actions" v-if="isResponsableOrAdmin">
-        <button class="sa-btn glass-btn" @click="openResModal()">+ Ressource</button>
-        <button class="sa-btn glass-btn-alt" @click="openFormModal()">+ Formation</button>
-        <button class="sa-btn btn-outline" @click="openCatModal()">+ Rubrique</button>
+        <button v-if="authStore.hasPermission('resources.create')" class="sa-btn glass-btn" @click="openResModal()">+ Ressource</button>
+        <button v-if="authStore.hasPermission('formations.create')" class="sa-btn glass-btn-alt" @click="openFormModal()">+ Formation</button>
+        <button v-if="authStore.hasAnyPermission(['resources.create', 'formations.create'])" class="sa-btn btn-outline" @click="openCatModal()">+ Rubrique</button>
       </div>
     </div>
 
     <!-- Main Navigation Tabs -->
     <div class="sa-tabs-bar">
       <div class="sa-tabs">
-        <button 
+        <button v-if="canViewResources || canViewFormations"
           :class="['sa-tab', { active: activeTab === 'faithful' }]" 
           @click="activeTab = 'faithful'"
         >
           🌟 Catalogue Fidèles (Aperçu)
         </button>
-        <button 
+        <button v-if="canViewResources"
           :class="['sa-tab', { active: activeTab === 'resources' }]" 
           @click="activeTab = 'resources'"
         >
           📖 Ressources ({{ resources.length }})
         </button>
-        <button 
+        <button v-if="canViewFormations"
           :class="['sa-tab', { active: activeTab === 'formations' }]" 
           @click="activeTab = 'formations'"
         >
           🎓 Formations ({{ formations.length }})
         </button>
-        <button 
+        <button v-if="canViewResources || canViewFormations"
           :class="['sa-tab', { active: activeTab === 'categories' }]" 
           @click="activeTab = 'categories'"
         >
@@ -806,10 +803,10 @@ const getItemCover = (item) => {
     <!-- ========================================================================= -->
     <!-- TAB 2: GESTION DES RESSOURCES                                             -->
     <!-- ========================================================================= -->
-    <div v-if="activeTab === 'resources'" class="premium-card">
+    <div v-if="activeTab === 'resources' && canViewResources" class="premium-card">
       <div class="tab-header-row">
         <h3>Documents & Médias de l'Église</h3>
-        <button v-if="isResponsableOrAdmin" class="sa-btn sa-btn-primary" @click="openResModal()">+ Ajouter une ressource</button>
+        <button v-if="authStore.hasPermission('resources.create')" class="sa-btn sa-btn-primary" @click="openResModal()">+ Ajouter une ressource</button>
       </div>
 
       <table class="sa-table modern-table">
@@ -846,8 +843,8 @@ const getItemCover = (item) => {
             <td style="text-align: right;">
               <button class="icon-btn" @click="openMediaViewer(r)" title="Visualiser / Lire">▶️</button>
               <button class="icon-btn" @click="handleDownload(r)" title="Télécharger">📥</button>
-              <button v-if="isResponsableOrAdmin" class="icon-btn" @click="openResModal(r)" title="Modifier">✏️</button>
-              <button v-if="isResponsableOrAdmin" class="icon-btn text-danger" @click="store.deleteResource(r.id); store.fetchResources()" title="Supprimer">🗑️</button>
+              <button v-if="authStore.hasPermission('resources.update')" class="icon-btn" @click="openResModal(r)" title="Modifier">✏️</button>
+              <button v-if="authStore.hasPermission('resources.delete')" class="icon-btn text-danger" @click="store.deleteResource(r.id); store.fetchResources()" title="Supprimer">🗑️</button>
             </td>
           </tr>
         </tbody>
@@ -857,10 +854,10 @@ const getItemCover = (item) => {
     <!-- ========================================================================= -->
     <!-- TAB 3: GESTION DES FORMATIONS                                             -->
     <!-- ========================================================================= -->
-    <div v-if="activeTab === 'formations'" class="premium-card">
+    <div v-if="activeTab === 'formations' && canViewFormations" class="premium-card">
       <div class="tab-header-row">
         <h3>Programmes & Formations</h3>
-        <button v-if="isResponsableOrAdmin" class="sa-btn sa-btn-primary" @click="openFormModal()">+ Créer une formation</button>
+        <button v-if="authStore.hasPermission('formations.create')" class="sa-btn sa-btn-primary" @click="openFormModal()">+ Créer une formation</button>
       </div>
 
       <table class="sa-table modern-table">
@@ -901,8 +898,8 @@ const getItemCover = (item) => {
             </td>
             <td style="text-align: right;">
               <button class="icon-btn" @click="openFormationViewer(f)" title="Aperçu du cours">🎓</button>
-              <button v-if="isResponsableOrAdmin" class="icon-btn" @click="openFormModal(f)" title="Modifier">✏️</button>
-              <button v-if="isResponsableOrAdmin" class="icon-btn text-danger" @click="store.deleteFormation(f.id); store.fetchFormations()" title="Supprimer">🗑️</button>
+              <button v-if="authStore.hasPermission('formations.update')" class="icon-btn" @click="openFormModal(f)" title="Modifier">✏️</button>
+              <button v-if="authStore.hasPermission('formations.delete')" class="icon-btn text-danger" @click="store.deleteFormation(f.id); store.fetchFormations()" title="Supprimer">🗑️</button>
             </td>
           </tr>
         </tbody>
@@ -912,10 +909,10 @@ const getItemCover = (item) => {
     <!-- ========================================================================= -->
     <!-- TAB 4: RUBRIQUES & CATÉGORIES                                            -->
     <!-- ========================================================================= -->
-    <div v-if="activeTab === 'categories'" class="premium-card">
+    <div v-if="activeTab === 'categories' && (canViewResources || canViewFormations)" class="premium-card">
       <div class="tab-header-row">
         <h3>Rubriques des Médias & Formations</h3>
-        <button v-if="isResponsableOrAdmin" class="sa-btn sa-btn-primary" @click="openCatModal()">+ Nouvelle Rubrique</button>
+        <button v-if="authStore.hasAnyPermission(['resources.create', 'formations.create'])" class="sa-btn sa-btn-primary" @click="openCatModal()">+ Nouvelle Rubrique</button>
       </div>
 
       <table class="sa-table modern-table">
@@ -937,8 +934,8 @@ const getItemCover = (item) => {
               </span>
             </td>
             <td style="text-align: right;">
-              <button v-if="isResponsableOrAdmin" class="icon-btn" @click="openCatModal(c)" title="Modifier">✏️</button>
-              <button v-if="isResponsableOrAdmin" class="icon-btn text-danger" @click="store.deleteCategory(c.id); store.fetchCategories()" title="Supprimer">🗑️</button>
+              <button v-if="authStore.hasPermission(c.type === 'formation' ? 'formations.update' : 'resources.update')" class="icon-btn" @click="openCatModal(c)" title="Modifier">✏️</button>
+              <button v-if="authStore.hasPermission(c.type === 'formation' ? 'formations.delete' : 'resources.delete')" class="icon-btn text-danger" @click="store.deleteCategory(c.id); store.fetchCategories()" title="Supprimer">🗑️</button>
             </td>
           </tr>
         </tbody>
@@ -972,7 +969,7 @@ const getItemCover = (item) => {
 
         <div class="sa-modal-actions">
           <button class="sa-btn sa-btn-secondary" @click="showCatModal = false">Annuler</button>
-          <button class="sa-btn sa-btn-primary" :disabled="isSubmitting" @click="saveCategory">
+          <button v-if="authStore.hasPermission(catForm.id ? (catForm.type === 'formation' ? 'formations.update' : 'resources.update') : (catForm.type === 'formation' ? 'formations.create' : 'resources.create'))" class="sa-btn sa-btn-primary" :disabled="isSubmitting" @click="saveCategory">
             {{ isSubmitting ? 'Enregistrement...' : 'Enregistrer la rubrique' }}
           </button>
         </div>
@@ -1054,7 +1051,7 @@ const getItemCover = (item) => {
 
         <div class="sa-modal-actions">
           <button class="sa-btn sa-btn-secondary" @click="showResModal = false">Annuler</button>
-          <button class="sa-btn sa-btn-primary" :disabled="isSubmitting" @click="saveResource">
+          <button v-if="authStore.hasPermission(resForm.id ? 'resources.update' : 'resources.create')" class="sa-btn sa-btn-primary" :disabled="isSubmitting" @click="saveResource">
             {{ isSubmitting ? 'Enregistrement...' : 'Enregistrer la ressource' }}
           </button>
         </div>
@@ -1127,13 +1124,13 @@ const getItemCover = (item) => {
               class="sa-input" 
               placeholder="Nom du module (ex: Module 1 : Introduction à la doctrine)" 
             />
-            <button type="button" class="btn-add-module" @click="addModuleToForm">+ Ajouter</button>
+            <button v-if="authStore.hasPermission('formations.update')" type="button" class="btn-add-module" @click="addModuleToForm">+ Ajouter</button>
           </div>
 
           <div v-if="formForm.modules.length" class="modules-chips-list">
             <div v-for="(mod, idx) in formForm.modules" :key="idx" class="module-chip">
               <span>{{ idx + 1 }}. {{ mod }}</span>
-              <button type="button" @click="removeModuleFromForm(idx)" class="chip-del">✕</button>
+              <button v-if="authStore.hasPermission('formations.update')" type="button" @click="removeModuleFromForm(idx)" class="chip-del">✕</button>
             </div>
           </div>
         </div>
@@ -1145,7 +1142,7 @@ const getItemCover = (item) => {
               <label class="modules-label">🎬 Supports & Médias pédagogiques (Fichiers, Vidéos, Audios)</label>
               <p class="section-subtext">Ajoutez les vidéos, fichiers audio, présentations ou documents PDF du cours.</p>
             </div>
-            <button type="button" class="btn-add-content" @click="addContentToForm">
+            <button v-if="authStore.hasPermission('formations.update')" type="button" class="btn-add-content" @click="addContentToForm">
               + Ajouter un fichier / média
             </button>
           </div>
@@ -1158,7 +1155,7 @@ const getItemCover = (item) => {
             <div v-for="(cnt, idx) in formForm.contents" :key="idx" class="content-item-card">
               <div class="content-card-top">
                 <span class="content-index-badge">Support #{{ idx + 1 }}</span>
-                <button type="button" @click="removeContentFromForm(idx)" class="btn-remove-content" title="Supprimer ce contenu">✕ Retirer</button>
+                <button v-if="authStore.hasPermission('formations.update')" type="button" @click="removeContentFromForm(idx)" class="btn-remove-content" title="Supprimer ce contenu">✕ Retirer</button>
               </div>
 
               <div class="form-row-2">
@@ -1249,7 +1246,7 @@ const getItemCover = (item) => {
 
         <div class="sa-modal-actions">
           <button class="sa-btn sa-btn-secondary" @click="showFormModal = false">Annuler</button>
-          <button class="sa-btn sa-btn-primary" :disabled="isSubmitting" @click="saveFormation">
+          <button v-if="authStore.hasPermission(formForm.id ? 'formations.update' : 'formations.create')" class="sa-btn sa-btn-primary" :disabled="isSubmitting" @click="saveFormation">
             {{ isSubmitting ? 'Enregistrement...' : 'Enregistrer la formation' }}
           </button>
         </div>

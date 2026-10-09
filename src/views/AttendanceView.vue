@@ -5,6 +5,7 @@ import { useAuthStore } from '../stores/auth'
 import { useAttendanceStore } from '../stores/attendance'
 import { useMembersStore } from '../stores/members'
 import SparklineChart from '@/components/dashboard/SparklineChart.vue'
+import QrScanner from '@/components/QrScanner.vue'
 
 const authStore = useAuthStore()
 const aStore = useAttendanceStore()
@@ -30,6 +31,14 @@ const sessionModalMode = ref('create')
 const showAttendanceModal = ref(false)
 const attendanceModalMode = ref('create')
 const showQrModal = ref(false)
+const showScanMemberModal = ref(false)
+const scanMemberTab = ref('camera')
+const scanMemberSessionId = ref('')
+const scanMemberPayload = ref('')
+const scanMemberScannerRef = ref(null)
+const scanMemberGps = reactive({ latitude: '', longitude: '', accuracy: null })
+const scanMemberBusy = ref(false)
+const scanMemberResult = reactive({ type: '', message: '', member: null, status: null })
 const showMarkAbsentModal = ref(false)
 const showBulkAttendanceModal = ref(false)
 const showReasonModal = ref(false)
@@ -41,7 +50,7 @@ const confirmAction = ref('')
 const sessionForm = reactive({
   id: null, title: '', session_date: '', start_time: '08:00', end_time: '11:00',
   type: 'Culte dominical', description: '', location: '',
-  latitude: '', longitude: '', gps_radius_meters: 100, gps_required: false, status: true,
+  latitude: '', longitude: '', gps_radius_meters: 250, gps_required: false, status: true,
 })
 const attendanceForm = reactive({
   id: null, session_id: '', member_id: '', status: 'present', arrival_time: '',
@@ -55,6 +64,9 @@ const formAlert = reactive({ type: '', message: '' })
 const bulkStatus = ref('present')
 const bulkSelection = ref([])
 const qrValidityMinutes = ref(180)
+const closeAbsencesOnInvalidate = ref(true)
+const gpsGetting = ref(false)
+const gpsMsg = ref('')
 
 const isSessionEditing = computed(() => !!sessionForm.id)
 const isAttendanceEditing = computed(() => !!attendanceForm.id)
@@ -131,10 +143,53 @@ function resetSessionForm() {
   sessionForm.id = null; sessionForm.title = ''; sessionForm.session_date = ''
   sessionForm.start_time = '08:00'; sessionForm.end_time = '11:00'; sessionForm.type = 'Culte dominical'
   sessionForm.description = ''; sessionForm.location = ''; sessionForm.latitude = ''
-  sessionForm.longitude = ''; sessionForm.gps_radius_meters = 100; sessionForm.gps_required = false
+  sessionForm.longitude = ''; sessionForm.gps_radius_meters = 250; sessionForm.gps_required = false
   sessionForm.status = true
+  gpsMsg.value = ''
   Object.keys(sessionFormErrors).forEach(k => delete sessionFormErrors[k])
   formAlert.type = ''; formAlert.message = ''
+}
+
+async function useCurrentGpsLocation() {
+  if (gpsGetting.value) return
+  if (!navigator || !navigator.geolocation) {
+    gpsMsg.value = '⚠️ Votre navigateur ou appareil ne supporte pas la géolocalisation. Saisissez les coordonnées manuellement.'
+    formAlert.type = 'danger'
+    formAlert.message = gpsMsg.value
+    return
+  }
+  gpsGetting.value = true
+  gpsMsg.value = ''
+  try {
+    const pos = await new Promise((resolve, reject) => {
+      const to = setTimeout(() => reject(new Error('timeout')), 12000)
+      navigator.geolocation.getCurrentPosition(
+        (p) => { clearTimeout(to); resolve(p) },
+        (err) => { clearTimeout(to); reject(err) },
+        { enableHighAccuracy: true, maximumAge: 60000, timeout: 12000 }
+      )
+    })
+    const coords = pos.coords
+    sessionForm.latitude = Number(coords.latitude).toFixed(7)
+    sessionForm.longitude = Number(coords.longitude).toFixed(7)
+    const acc = coords.accuracy ? Math.round(Number(coords.accuracy)) : null
+    gpsMsg.value = acc !== null
+      ? `✅ Position récupérée (précision ~${acc} m).`
+      : '✅ Position récupérée.'
+    formAlert.type = 'success'
+    formAlert.message = gpsMsg.value
+  } catch (err) {
+    const msg = err?.message?.toLowerCase?.()?.includes('timeout')
+      ? '⏱️ Temps écoulé : impossible de récupérer la position. Vérifiez votre GPS ou autorisations.'
+      : err?.code === 1
+      ? '🔒 Permission refusée. Autorisez la géolocalisation dans les paramètres de votre navigateur.'
+      : '⚠️ Erreur de récupération de la position. Saisissez les coordonnées manuellement.'
+    gpsMsg.value = msg
+    formAlert.type = 'danger'
+    formAlert.message = msg
+  } finally {
+    gpsGetting.value = false
+  }
 }
 
 function resetAttendanceForm() {
@@ -166,7 +221,7 @@ function openEditSession(s) {
   sessionForm.location = s.location || ''
   sessionForm.latitude = s.latitude || ''
   sessionForm.longitude = s.longitude || ''
-  sessionForm.gps_radius_meters = s.gps_radius_meters || 100
+  sessionForm.gps_radius_meters = s.gps_radius_meters || 250
   sessionForm.gps_required = !!s.gps_required
   sessionForm.status = s.status !== false
   showSessionModal.value = true
@@ -374,6 +429,142 @@ async function confirmBulkAttendance() {
   if (r.ok) { showBulkAttendanceModal.value = false; await loadAttendances(); await loadAllStats() }
 }
 
+function openScanMember() {
+  scanMemberTab.value = 'camera'
+  scanMemberSessionId.value = ''
+  scanMemberPayload.value = ''
+  scanMemberGps.latitude = ''
+  scanMemberGps.longitude = ''
+  scanMemberGps.accuracy = null
+  scanMemberResult.type = ''; scanMemberResult.message = ''; scanMemberResult.member = null; scanMemberResult.status = null
+  if (aStore.sessions.length) {
+    const firstActive = aStore.sessions.find(s => s.status !== false) || aStore.sessions[0]
+    scanMemberSessionId.value = String(firstActive.id)
+  }
+  showScanMemberModal.value = true
+}
+function onScanMemberDetected(data) {
+  const txt = (data || '').trim()
+  if (!txt) return
+  scanMemberPayload.value = txt
+  scanMemberTab.value = 'paste'
+  scanMemberResult.type = 'success'
+  const preview = txt.length > 80 ? txt.slice(0, 80) + '…' : txt
+  scanMemberResult.message = `✅ QR détecté automatiquement. Vérifiez puis cliquez sur "Marquer la présence". Contenu : ${preview}`
+}
+async function scanMemberUseGps() {
+  const nativeWebView = window.__CHURCH_MOBILE_NATIVE__ === true
+    ? window.flutter_inappwebview
+    : null
+  if (nativeWebView?.callHandler) {
+    try {
+      const result = await nativeWebView.callHandler('churchGetCurrentLocation')
+      if (!result?.success) throw new Error(result?.message || 'Position indisponible.')
+      scanMemberGps.latitude = Number(result.latitude).toFixed(7)
+      scanMemberGps.longitude = Number(result.longitude).toFixed(7)
+      scanMemberGps.accuracy = result.accuracy ? Math.round(Number(result.accuracy)) : null
+      scanMemberResult.type = 'success'
+      scanMemberResult.message = scanMemberGps.accuracy
+        ? `Position récupérée (précision ~${scanMemberGps.accuracy} m).`
+        : 'Position récupérée.'
+    } catch (err) {
+      scanMemberResult.type = 'danger'
+      scanMemberResult.message = err?.message || 'Erreur GPS.'
+    }
+    return
+  }
+
+  if (!navigator?.geolocation) {
+    scanMemberResult.type = 'danger'
+    scanMemberResult.message = 'Géolocalisation non supportée par votre appareil.'
+    return
+  }
+  try {
+    const pos = await new Promise((resolve, reject) => {
+      const to = setTimeout(() => reject(new Error('timeout')), 10000)
+      navigator.geolocation.getCurrentPosition(
+        (p) => { clearTimeout(to); resolve(p) },
+        (err) => { clearTimeout(to); reject(err) },
+        { enableHighAccuracy: true, maximumAge: 30000, timeout: 10000 }
+      )
+    })
+    scanMemberGps.latitude = Number(pos.coords.latitude).toFixed(7)
+    scanMemberGps.longitude = Number(pos.coords.longitude).toFixed(7)
+    scanMemberGps.accuracy = pos.coords.accuracy ? Math.round(Number(pos.coords.accuracy)) : null
+    scanMemberResult.type = 'success'
+    scanMemberResult.message = scanMemberGps.accuracy
+      ? `Position récupérée (précision ~${scanMemberGps.accuracy} m).`
+      : 'Position récupérée.'
+  } catch (err) {
+    scanMemberResult.type = 'danger'
+    scanMemberResult.message = err?.code === 1
+      ? 'Permission GPS refusée.'
+      : (err?.message?.toLowerCase?.()?.includes('timeout') ? 'Temps écoulé (GPS).' : 'Erreur GPS.')
+  }
+}
+async function submitScanMember() {
+  if (!scanMemberSessionId.value) {
+    scanMemberResult.type = 'danger'; scanMemberResult.message = 'Sélectionnez une session.'
+    return
+  }
+  const payloadRaw = (scanMemberPayload.value || '').trim()
+  if (!payloadRaw) {
+    scanMemberResult.type = 'danger'; scanMemberResult.message = 'Collez le contenu du QR code ou le token du membre.'
+    return
+  }
+  scanMemberBusy.value = true
+  scanMemberResult.type = ''; scanMemberResult.message = ''; scanMemberResult.member = null; scanMemberResult.status = null
+  try {
+    let payload = { session_id: Number(scanMemberSessionId.value) }
+    const trimmed = payloadRaw
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(trimmed)
+        payload.qr_payload = trimmed
+        if (parsed.t) payload.member_qr_token = parsed.t
+        if (parsed.mid) payload.member_id = parsed.mid
+        if (parsed.code) payload.member_code = parsed.code
+      } catch {
+        payload.member_qr_token = trimmed
+      }
+    } else {
+      if (/^MQR-/i.test(trimmed)) payload.member_qr_token = trimmed
+      else if (/^MEM-/i.test(trimmed)) payload.member_code = trimmed
+      else if (/^\d+$/.test(trimmed)) payload.member_id = Number(trimmed)
+      else payload.member_qr_token = trimmed
+    }
+    if (scanMemberGps.latitude && scanMemberGps.longitude) {
+      payload.latitude = scanMemberGps.latitude
+      payload.longitude = scanMemberGps.longitude
+      if (scanMemberGps.accuracy) payload.accuracy = scanMemberGps.accuracy
+    }
+    const r = await aStore.scanMember(payload)
+    scanMemberResult.member = r.member || null
+    scanMemberResult.status = r.status || null
+    if (r.ok) {
+      scanMemberResult.type = 'success'
+      const who = r.member ? `${r.member.first_name || ''} ${r.member.last_name || ''}`.trim() || r.member.member_code || 'Membre' : 'Membre'
+      const st = r.status === 'retard' ? 'marqué en retard' : (r.status === 'present' ? 'marqué présent' : 'enregistré')
+      scanMemberResult.message = `✅ ${who} ${st} avec succès.`
+      await loadAttendances(); await loadAllStats()
+      setTimeout(() => { scanMemberPayload.value = '' }, 600)
+    } else {
+      scanMemberResult.type = r.already_registered ? 'warning' : 'danger'
+      if (r.already_registered) {
+        const who = r.member ? `${r.member.first_name || ''} ${r.member.last_name || ''}`.trim() || r.member.member_code || 'Ce membre' : 'Ce membre'
+        scanMemberResult.message = `⚠️ ${who} est déjà enregistré sur cette session.`
+      } else {
+        scanMemberResult.message = r.message || 'Erreur de scan.'
+      }
+    }
+  } catch (e) {
+    scanMemberResult.type = 'danger'
+    scanMemberResult.message = e?.message || 'Erreur inattendue.'
+  } finally {
+    scanMemberBusy.value = false
+  }
+}
+
 const pagesToShow = computed(() => {
   const cur = aStore.sessionsPagination.current_page || 1
   const last = aStore.sessionsPagination.last_page || 1
@@ -433,8 +624,11 @@ onMounted(async () => {
         <p class="page-subtitle">Gérez les sessions, enregistrez les présences et consultez les statistiques</p>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <button class="btn-secondary" @click="openCreateReason">➕ Motif d'absence</button>
-        <button class="btn-primary" @click="openCreateSession">➕ Nouvelle session</button>
+        <button v-if="authStore.hasPermission('attendance.create')" class="btn-secondary" @click="openCreateReason">➕ Motif d'absence</button>
+        <button v-if="authStore.hasPermission('attendance.scan')" class="btn-secondary" style="background:#f0fdf4;border-color:#86efac;color:#166534" @click="openScanMember">
+          📱 Scanner QR Membre
+        </button>
+        <button v-if="authStore.hasPermission('attendance.create')" class="btn-primary" @click="openCreateSession">➕ Nouvelle session</button>
       </div>
     </div>
 
@@ -600,9 +794,14 @@ onMounted(async () => {
                 </div>
               </td>
               <td>
-                <span :class="s.status ? 'status-badge active' : 'status-badge inactive'">
-                  {{ s.status ? 'Active' : 'Clôturée' }}
-                </span>
+                <div style="display:flex;flex-direction:column;gap:4px">
+                  <span :class="s.status ? 'status-badge active' : 'status-badge inactive'">
+                    {{ s.status ? 'Active' : 'Clôturée' }}
+                  </span>
+                  <span v-if="s.auto_absences_processed" class="status-badge info" style="font-size:11px">
+                    ✅ Absences traitées &amp; Messages envoyés
+                  </span>
+                </div>
               </td>
               <td>
                 <span v-if="s.qr_valid" class="status-badge active">✅ Valide</span>
@@ -611,12 +810,12 @@ onMounted(async () => {
               </td>
               <td>
                 <div class="row-actions" style="flex-wrap:wrap">
-                  <button class="btn-icon edit" @click="openEditSession(s)" title="Modifier">✏️</button>
-                  <button class="btn-icon" style="background:#eff6ff;color:#2563eb" @click="askGenerateQr(s)" title="QR Code">📱</button>
-                  <button class="btn-icon" style="background:#ecfdf5;color:#059669" @click="askBulkAttendance(s)" title="Enregistrement en masse">📋</button>
-                  <button class="btn-icon" style="background:#fef3c7;color:#d97706" @click="askMarkAbsent(s)" title="Marquer tous absents">⏭️</button>
-                  <button class="btn-icon" style="background:#f0f9ff;color:#0284c7" @click="() => { showAttendanceModal=false; openCreateAttendance(s.id) }" title="Ajouter présence">➕</button>
-                  <button class="btn-icon delete" @click="askDeleteSession(s)" title="Supprimer">🗑️</button>
+                  <button v-if="authStore.hasPermission('attendance.update')" class="btn-icon edit" @click="openEditSession(s)" title="Modifier">✏️</button>
+                  <button v-if="authStore.hasPermission('attendance.create')" class="btn-icon" style="background:#eff6ff;color:#2563eb" @click="askGenerateQr(s)" title="QR Code">📱</button>
+                  <button v-if="authStore.hasPermission('attendance.create')" class="btn-icon" style="background:#ecfdf5;color:#059669" @click="askBulkAttendance(s)" title="Enregistrement en masse">📋</button>
+                  <button v-if="authStore.hasPermission('attendance.create')" class="btn-icon" style="background:#fef3c7;color:#d97706" @click="askMarkAbsent(s)" title="Marquer tous absents">⏭️</button>
+                  <button v-if="authStore.hasPermission('attendance.create')" class="btn-icon" style="background:#f0f9ff;color:#0284c7" @click="() => { showAttendanceModal=false; openCreateAttendance(s.id) }" title="Ajouter présence">➕</button>
+                  <button v-if="authStore.hasPermission('attendance.delete')" class="btn-icon delete" @click="askDeleteSession(s)" title="Supprimer">🗑️</button>
                 </div>
               </td>
             </tr>
@@ -654,7 +853,7 @@ onMounted(async () => {
           <option :value="50">50 / page</option>
           <option :value="100">100 / page</option>
         </select>
-        <button class="btn-secondary" @click="openCreateAttendance()">➕ Nouvelle présence</button>
+        <button v-if="authStore.hasPermission('attendance.create')" class="btn-secondary" @click="openCreateAttendance()">➕ Nouvelle présence</button>
       </div>
 
       <div class="sa-table-wrap">
@@ -712,14 +911,15 @@ onMounted(async () => {
                 <span v-else class="sa-subtle">—</span>
               </td>
               <td>
-                <span v-if="a.scan_method === 'qr'" class="role-badge admin">📱 QR</span>
+                <span v-if="a.scan_method === 'qr'" class="role-badge admin">📱 QR Session</span>
+                <span v-else-if="a.scan_method === 'member_qr'" class="role-badge super">🪪 QR Membre</span>
                 <span v-else-if="a.scan_method === 'bulk'" class="role-badge staff">📋 Lot</span>
                 <span v-else class="role-badge default">✍️ Manuel</span>
               </td>
               <td>
                 <div class="row-actions">
-                  <button class="btn-icon edit" @click="openEditAttendance(a)" title="Modifier">✏️</button>
-                  <button class="btn-icon delete" @click="askDeleteAttendance(a)" title="Supprimer">🗑️</button>
+                  <button v-if="authStore.hasPermission('attendance.update')" class="btn-icon edit" @click="openEditAttendance(a)" title="Modifier">✏️</button>
+                  <button v-if="authStore.hasPermission('attendance.delete')" class="btn-icon delete" @click="askDeleteAttendance(a)" title="Supprimer">🗑️</button>
                 </div>
               </td>
             </tr>
@@ -745,7 +945,7 @@ onMounted(async () => {
     <div v-show="activeTab==='reasons'">
       <div class="sa-toolbar">
         <div style="flex:1"></div>
-        <button class="btn-primary" @click="openCreateReason">➕ Nouveau motif</button>
+        <button v-if="authStore.hasPermission('attendance.create')" class="btn-primary" @click="openCreateReason">➕ Nouveau motif</button>
       </div>
       <div class="sa-table-wrap">
         <table class="sa-table">
@@ -772,8 +972,8 @@ onMounted(async () => {
               <td><span :class="r.status ? 'status-badge active' : 'status-badge inactive'">{{ r.status ? 'Actif' : 'Inactif' }}</span></td>
               <td>
                 <div class="row-actions">
-                  <button class="btn-icon edit" @click="openEditReason(r)">✏️</button>
-                  <button class="btn-icon delete" @click="askDeleteReason(r)">🗑️</button>
+                  <button v-if="authStore.hasPermission('attendance.update')" class="btn-icon edit" @click="openEditReason(r)">✏️</button>
+                  <button v-if="authStore.hasPermission('attendance.delete')" class="btn-icon delete" @click="askDeleteReason(r)">🗑️</button>
                 </div>
               </td>
             </tr>
@@ -848,6 +1048,11 @@ onMounted(async () => {
                   <input type="checkbox" v-model="sessionForm.gps_required" style="margin-right:8px;accent-color:var(--primary)" />
                   Activer la vérification GPS
                 </label>
+                <button v-if="sessionForm.gps_required" type="button" class="btn-secondary" style="margin-top:6px;padding:6px 10px;font-size:12px" :disabled="gpsGetting" @click="useCurrentGpsLocation">
+                  <span v-if="gpsGetting">📍 Récupération...</span>
+                  <span v-else>📍 Utiliser ma position actuelle</span>
+                </button>
+                <div v-if="gpsMsg" style="margin-top:6px;font-size:12px;color:var(--text-muted)">{{ gpsMsg }}</div>
               </div>
               <div class="form-group">
                 <label>Latitude <span v-if="sessionFormErrors.latitude" class="err">{{ sessionFormErrors.latitude }}</span></label>
@@ -858,14 +1063,15 @@ onMounted(async () => {
                 <input v-model="sessionForm.longitude" placeholder="Ex: 1.2312" :class="{err: sessionFormErrors.longitude}" :disabled="!sessionForm.gps_required" />
               </div>
               <div class="form-group">
-                <label>Rayon (m)</label>
+                <label>Rayon (m) <span title="Recommandé : 250 m (couvre la cour + le bâtiment de l'église sans blocage intérieur en cas d'imprécision GPS)" style="cursor:help;color:var(--primary)">ⓘ</span></label>
                 <input type="number" v-model.number="sessionForm.gps_radius_meters" :disabled="!sessionForm.gps_required" />
+                <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Par défaut : 250 m. Réduisez pour un contrôle strict.</div>
               </div>
             </div>
           </div>
           <div class="modal-footer">
             <button class="btn-secondary" @click="showSessionModal=false; resetSessionForm()">Annuler</button>
-            <button class="btn-primary" :disabled="aStore.saving" @click="submitSessionForm">
+            <button v-if="authStore.hasPermission(isSessionEditing ? 'attendance.update' : 'attendance.create')" class="btn-primary" :disabled="aStore.saving" @click="submitSessionForm">
               <span v-if="aStore.saving">💾...</span>
               <span v-else>{{ isSessionEditing ? '💾 Enregistrer' : '✅ Créer la session' }}</span>
             </button>
@@ -931,7 +1137,7 @@ onMounted(async () => {
           </div>
           <div class="modal-footer">
             <button class="btn-secondary" @click="showAttendanceModal=false; resetAttendanceForm()">Annuler</button>
-            <button class="btn-primary" :disabled="aStore.saving" @click="submitAttendanceForm">
+            <button v-if="authStore.hasPermission(isAttendanceEditing ? 'attendance.update' : 'attendance.create')" class="btn-primary" :disabled="aStore.saving" @click="submitAttendanceForm">
               <span v-if="aStore.saving">💾...</span>
               <span v-else>{{ isAttendanceEditing ? '💾 Enregistrer' : '✅ Valider' }}</span>
             </button>
@@ -985,7 +1191,7 @@ onMounted(async () => {
           </div>
           <div class="modal-footer">
             <button class="btn-secondary" @click="showReasonModal=false; resetReasonForm()">Annuler</button>
-            <button class="btn-primary" :disabled="aStore.saving" @click="submitReasonForm">
+            <button v-if="authStore.hasPermission(isReasonEditing ? 'attendance.update' : 'attendance.create')" class="btn-primary" :disabled="aStore.saving" @click="submitReasonForm">
               <span v-if="aStore.saving">💾...</span>
               <span v-else>{{ isReasonEditing ? '💾 Enregistrer' : '✅ Créer' }}</span>
             </button>
@@ -1022,10 +1228,131 @@ onMounted(async () => {
                 <label>Validité (minutes)</label>
                 <input type="number" v-model.number="qrValidityMinutes" min="5" max="4320" />
               </div>
-              <button class="btn-secondary" style="align-self:flex-end" @click="confirmGenerateQr">🔄 Régénérer</button>
+              <button v-if="authStore.hasPermission('attendance.create')" class="btn-secondary" style="align-self:flex-end" @click="confirmGenerateQr">🔄 Régénérer</button>
             </div>
-            <button v-if="confirmTarget" class="btn-danger" style="margin-top:12px;width:100%" @click="async () => { const r = await aStore.invalidateQr(confirmTarget.id); formAlert.type=r.ok?'success':'danger'; formAlert.message=r.message; if (r.ok) showQrModal=false }">
-              🚫 Invalider le QR Code
+            <div v-if="confirmTarget" style="margin-top:16px;padding:12px;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;text-align:left">
+              <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer">
+                <input type="checkbox" v-model="closeAbsencesOnInvalidate" style="margin-top:3px;accent-color:var(--primary)" />
+                <div style="font-size:13px">
+                  <div style="font-weight:600;color:#991b1b">Clôturer immédiatement la session et notifier les absents</div>
+                  <div style="color:#b91c1c;font-size:12px;margin-top:2px">Marque automatiquement les absents et envoie un message de soutien pastoral à chaque fidèle absent.</div>
+                </div>
+              </label>
+            </div>
+            <button v-if="confirmTarget" class="btn-danger" style="margin-top:12px;width:100%" @click="async () => {
+              const opts = { process_absences: !!closeAbsencesOnInvalidate };
+              const r = await aStore.invalidateQr(confirmTarget.id, opts);
+              formAlert.type=r.ok?'success':'danger';
+              if (r.ok) {
+                const extra = (r.report && r.report.absences_marked !== undefined)
+                  ? ` (${r.report.absences_marked} absence(s) marquée(s), ${r.report.messages_sent || 0} message(s) envoyé(s))`
+                  : '';
+                formAlert.message = (r.message || 'Opération réussie') + extra;
+                showQrModal=false;
+              } else {
+                formAlert.message = r.message || 'Erreur';
+              }
+            }">
+              <span v-if="closeAbsencesOnInvalidate">🚫 Invalider &amp; Clôturer la session (notifier absents)</span>
+              <span v-else>🚫 Invalider le QR Code uniquement</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Scan Member QR Modal -->
+    <Teleport to="body">
+      <div v-if="showScanMemberModal" class="modal-backdrop" @click.self="showScanMemberModal=false">
+        <div class="modal-dialog modal-lg">
+          <div class="modal-header">
+            <h3>🪪 Scanner un QR Code Membre</h3>
+            <button class="modal-close" @click="showScanMemberModal=false">✕</button>
+          </div>
+          <div class="modal-body">
+            <div v-if="scanMemberResult.message" :class="['form-alert', scanMemberResult.type]">
+              <div style="font-weight:600">{{ scanMemberResult.message }}</div>
+              <div v-if="scanMemberResult.member" style="margin-top:6px;font-size:13px;opacity:.9">
+                👤 {{ scanMemberResult.member.first_name }} {{ scanMemberResult.member.last_name }}
+                <span v-if="scanMemberResult.member.member_code" style="margin-left:8px">({{ scanMemberResult.member.member_code }})</span>
+                <span v-if="scanMemberResult.status" style="margin-left:10px;font-weight:600">
+                  → {{ scanMemberResult.status === 'present' ? 'Présent' : (scanMemberResult.status === 'retard' ? 'En retard' : scanMemberResult.status) }}
+                </span>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Session active *</label>
+              <select v-model="scanMemberSessionId" style="width:100%">
+                <option value="">Choisir une session...</option>
+                <option v-for="s in aStore.sessions" :key="s.id" :value="String(s.id)">
+                  {{ s.title }} ({{ s.session_date }} {{ s.start_time }})
+                  <span v-if="s.status === false"> — Clôturée</span>
+                </option>
+              </select>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:4px">
+                💡 Une session ouverte = présences enregistrables.
+              </div>
+            </div>
+
+            <div class="scan-tabs">
+              <button type="button" class="scan-tab" :class="{active: scanMemberTab==='camera'}" @click="scanMemberTab='camera'">
+                🎥 Caméra
+              </button>
+              <button type="button" class="scan-tab" :class="{active: scanMemberTab==='paste'}" @click="scanMemberTab='paste'">
+                📋 Coller le texte QR
+              </button>
+            </div>
+
+            <div v-show="scanMemberTab==='camera'">
+              <QrScanner
+                ref="scanMemberScannerRef"
+                v-model="scanMemberPayload"
+                :auto-start="showScanMemberModal && scanMemberTab==='camera'"
+                :once="true"
+                @detected="onScanMemberDetected"
+              />
+            </div>
+
+            <div v-show="scanMemberTab==='paste'" class="form-group" style="margin-top:8px">
+              <label>Contenu du QR code (ou token / matricule) *</label>
+              <textarea
+                v-model="scanMemberPayload"
+                rows="4"
+                placeholder="Collez ici le texte du QR code membre, ou son token (MQR-...), son matricule (MEM-...) ou son ID..."
+                style="width:100%;resize:vertical;font-family:ui-monospace, Menlo, monospace;font-size:13px"
+              ></textarea>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:4px">
+                Accepte : JSON QR complet, token MQR-XXX, matricule MEM-XXX, ID numérique.
+              </div>
+            </div>
+
+            <div class="form-section-title">📡 Position GPS (si requise par la session)</div>
+            <div class="form-row" style="margin-bottom:8px">
+              <div class="form-group">
+                <label>Latitude</label>
+                <input v-model="scanMemberGps.latitude" placeholder="Ex: 6.1725" />
+              </div>
+              <div class="form-group">
+                <label>Longitude</label>
+                <input v-model="scanMemberGps.longitude" placeholder="Ex: 1.2312" />
+              </div>
+              <div class="form-group" style="display:flex;flex-direction:column;gap:6px">
+                <label>&nbsp;</label>
+                <button type="button" class="btn-secondary" @click="scanMemberUseGps" :disabled="scanMemberBusy">
+                  📍 Utiliser ma position
+                </button>
+              </div>
+            </div>
+            <div v-if="scanMemberGps.accuracy" style="font-size:12px;color:var(--text-muted);margin-bottom:12px">
+              Précision GPS estimée : ~{{ scanMemberGps.accuracy }} m
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn-secondary" @click="showScanMemberModal=false">Fermer</button>
+            <button class="btn-primary" :disabled="scanMemberBusy || !scanMemberSessionId || !scanMemberPayload.trim()" @click="submitScanMember">
+              <span v-if="scanMemberBusy">⏳ Enregistrement...</span>
+              <span v-else>✅ Marquer la présence</span>
             </button>
           </div>
         </div>
@@ -1332,4 +1659,9 @@ onMounted(async () => {
 .bulk-check.active { border-color: var(--primary); background: #eef2ff; }
 .bulk-avatar { width: 36px; height: 36px; border-radius: 50%; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; flex-shrink: 0; }
 .bulk-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.scan-tabs { display: flex; gap: 6px; background: #f8fafc; padding: 4px; border-radius: 10px; border: 1px solid var(--border-light); margin: 4px 0 16px; }
+.scan-tab { flex: 1; padding: 10px 14px; border: none; background: transparent; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text-muted); border-radius: 8px; transition: all .15s; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.scan-tab:hover { color: var(--text-primary); }
+.scan-tab.active { background: #fff; color: var(--primary); box-shadow: 0 2px 6px rgba(0,0,0,.05); }
 </style>

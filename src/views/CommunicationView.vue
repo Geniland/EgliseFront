@@ -194,7 +194,20 @@
               :class="msg.is_mine ? 'mine-row' : 'theirs-row'"
             >
               <div class="bubble" :class="msg.is_mine ? 'bubble-mine' : 'bubble-theirs'">
-                <p class="bubble-text">{{ msg.contenu }}</p>
+                <template v-if="hasQrMarkers(msg.contenu)">
+                  <div v-for="(seg, i) in parseMessageSegments(msg.contenu)" :key="i">
+                    <p v-if="seg.type === 'text'" class="bubble-text" v-html="seg.text"></p>
+                    <div v-else-if="seg.type === 'qr_image'" class="qr-inline-wrap" style="margin:10px 0;text-align:center">
+                      <div style="background:#fff;padding:12px;border-radius:12px;display:inline-block;border:2px dashed #6366f1;">
+                        <img :src="seg.src" alt="QR Code" style="width:200px;height:200px;display:block" />
+                      </div>
+                      <div style="font-size:11px;opacity:.85;margin-top:6px">
+                        🪪 QR Code personnel
+                      </div>
+                    </div>
+                  </div>
+                </template>
+                <p v-else class="bubble-text">{{ msg.contenu }}</p>
                 <div class="bubble-footer">
                   <span v-if="msg.expires_at" class="ephemeral-tag" title="Message éphémère">
                     ⏱️
@@ -354,6 +367,51 @@ const formatBubbleTime = (iso) => {
   if (!iso) return ''
   const d = new Date(iso)
   return d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+}
+
+function escapeHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+}
+function hasQrMarkers(contenu) {
+  if (!contenu || typeof contenu !== 'string') return false
+  return contenu.includes('---QR_CODE_')
+}
+function parseMessageSegments(contenu) {
+  const segs = []
+  if (!contenu || typeof contenu !== 'string') return [{ type: 'text', text: '' }]
+  let remaining = contenu
+  const imgRe = /---QR_CODE_IMAGE---((?:data:image|https?:)[^\s]+?(?:;base64,[A-Za-z0-9+/=\s]+?)?)(?=\n|---|$)/g
+  const dataRe = /---QR_CODE_DATA---([^\n]*)/g
+  const matches = []
+  let m
+  imgRe.lastIndex = 0
+  while ((m = imgRe.exec(remaining)) !== null) {
+    matches.push({ start: m.index, end: m.index + m[0].length, type: 'qr_image', value: m[1].trim() })
+  }
+  dataRe.lastIndex = 0
+  while ((m = dataRe.exec(remaining)) !== null) {
+    matches.push({ start: m.index, end: m.index + m[0].length, type: 'qr_data', value: m[1].trim() })
+  }
+  matches.sort((a, b) => a.start - b.start)
+  let cursor = 0
+  for (const mk of matches) {
+    if (mk.start > cursor) {
+      const txt = remaining.slice(cursor, mk.start).replace(/^\n+|\n+$/g, '')
+      if (txt) segs.push({ type: 'text', text: escapeHtml(txt).replace(/\n/g, '<br/>') })
+    }
+    if (mk.type === 'qr_image') {
+      segs.push({ type: 'qr_image', src: mk.value })
+    }
+    cursor = mk.end
+  }
+  if (cursor < remaining.length) {
+    const txt = remaining.slice(cursor).replace(/^\n+|\n+$/g, '')
+    if (txt) segs.push({ type: 'text', text: escapeHtml(txt).replace(/\n/g, '<br/>') })
+  }
+  if (!segs.length) segs.push({ type: 'text', text: escapeHtml(remaining).replace(/\n/g, '<br/>') })
+  return segs
 }
 
 const handleResize = () => {

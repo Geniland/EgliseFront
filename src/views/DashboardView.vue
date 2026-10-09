@@ -67,6 +67,11 @@ const channels = [
   { key: 'call', name: 'Annuaire', action: 'Consulter membres', icon: '📞', class: 'call', route: '/members' },
   { key: 'live', name: 'Diffusions Live', action: 'Studio direct', icon: '▶️', class: 'live', route: '/live-streams' },
 ]
+const visibleChannels = computed(() => channels.filter(channel => {
+  if (['sms', 'whatsapp', 'email', 'push', 'call'].includes(channel.key)) return authStore.hasPermission('members.view')
+  if (channel.key === 'live') return authStore.hasPermission('live_streams.view')
+  return true
+}))
 
 // Formatage monétaire dynamique
 const formatCurrency = (val, customCurrency = null) => {
@@ -121,7 +126,7 @@ const loadAll = async () => {
     ])
 
     if (statsRes.status === 'fulfilled' && statsRes.value?.data) {
-      stats.value = statsRes.value.data
+      stats.value = { ...stats.value, ...statsRes.value.data }
     }
     if (chartRes.status === 'fulfilled' && chartRes.value?.data) {
       chartData.value = {
@@ -222,7 +227,7 @@ onMounted(loadAll)
     <div class="stats-grid">
       
       <!-- 1. Membres Totaux -->
-      <div class="stat-card" @click="navigateTo('/members')">
+      <div v-if="authStore.hasPermission('members.view')" class="stat-card" @click="navigateTo('/members')">
         <div class="stat-card-header">
           <div style="flex:1">
             <div class="stat-label">Membres totaux</div>
@@ -248,7 +253,7 @@ onMounted(loadAll)
       </div>
 
       <!-- 2. Présences du Mois -->
-      <div class="stat-card" @click="navigateTo('/presences')">
+      <div v-if="authStore.hasPermission('attendance.view')" class="stat-card" @click="navigateTo('/presences')">
         <div class="stat-card-header">
           <div style="flex:1">
             <div class="stat-label">Présences (ce mois)</div>
@@ -274,7 +279,7 @@ onMounted(loadAll)
       </div>
 
       <!-- 3. Recettes & Dons du Mois -->
-      <div class="stat-card" @click="navigateTo('/finances')">
+      <div v-if="authStore.hasPermission('finance.view')" class="stat-card" @click="navigateTo('/finances')">
         <div class="stat-card-header">
           <div style="flex:1">
             <div class="stat-label">Recettes (ce mois)</div>
@@ -300,7 +305,7 @@ onMounted(loadAll)
       </div>
 
       <!-- 4. Événements à venir -->
-      <div class="stat-card" @click="navigateTo('/events')">
+      <div v-if="authStore.hasPermission('events.view')" class="stat-card" @click="navigateTo('/events')">
         <div class="stat-card-header">
           <div style="flex:1">
             <div class="stat-label">Événements à venir</div>
@@ -326,7 +331,7 @@ onMounted(loadAll)
       </div>
 
       <!-- 5. Demandes / Transactions en attente -->
-      <div class="stat-card" @click="navigateTo('/finances')">
+      <div v-if="authStore.hasPermission('finance.view')" class="stat-card" @click="navigateTo('/finances')">
         <div class="stat-card-header">
           <div style="flex:1">
             <div class="stat-label">Opérations en attente</div>
@@ -359,7 +364,7 @@ onMounted(loadAll)
     <div class="dashboard-grid-row">
       
       <!-- Graphique Présences & Dons -->
-      <div class="card">
+      <div v-if="authStore.hasAnyPermission(['attendance.view', 'finance.view'])" class="card">
         <div class="card-header">
           <h3 class="card-title">Évolution des présences & dons</h3>
           <div class="card-actions">
@@ -372,11 +377,11 @@ onMounted(loadAll)
         <div class="card-body">
           <div class="chart-container" v-if="chartData.labels && chartData.labels.length > 0">
             <div class="chart-legend">
-              <div class="chart-legend-item">
+              <div v-if="authStore.hasPermission('attendance.view')" class="chart-legend-item">
                 <span class="legend-dot" style="background:#3B82F6"></span>
                 Présences
               </div>
-              <div class="chart-legend-item">
+              <div v-if="authStore.hasPermission('finance.view')" class="chart-legend-item">
                 <span class="legend-dot" style="background:#10B981"></span>
                 Dons ({{ stats.donations.currency || 'FCFA' }})
               </div>
@@ -395,7 +400,7 @@ onMounted(loadAll)
       </div>
 
       <!-- Répartition par Département / Ministère -->
-      <div class="card">
+      <div v-if="authStore.hasPermission('ministries.view')" class="card">
         <div class="card-header">
           <h3 class="card-title">Répartition par département</h3>
           <router-link to="/services" class="link-see-all">Gérer</router-link>
@@ -418,10 +423,10 @@ onMounted(loadAll)
       </div>
 
       <!-- Activités Récentes -->
-      <div class="card">
+      <div v-if="authStore.hasAnyPermission(['members.view', 'finance.view', 'events.view', 'live_streams.view'])" class="card">
         <div class="card-header">
           <h3 class="card-title">Activités récentes</h3>
-          <router-link to="/members" class="link-see-all">Membres</router-link>
+          <router-link v-if="authStore.hasPermission('members.view')" to="/members" class="link-see-all">Membres</router-link>
         </div>
         <div class="card-body">
           <div v-if="recentActivities.length > 0" class="activity-list">
@@ -449,7 +454,7 @@ onMounted(loadAll)
     <div class="dashboard-grid-row-2">
       
       <!-- Résumé Financier Réel -->
-      <div class="card">
+      <div v-if="authStore.hasPermission('finance.view')" class="card">
         <div class="card-header">
           <h3 class="card-title">Résumé financier (Ce mois)</h3>
           <router-link to="/finances" class="link-see-all">Module Finances</router-link>
@@ -522,7 +527,7 @@ onMounted(loadAll)
       </div>
 
       <!-- Prochains Événements Réels -->
-      <div class="card">
+      <div v-if="authStore.hasPermission('events.view')" class="card">
         <div class="card-header">
           <h3 class="card-title">Prochains événements</h3>
           <router-link to="/events" class="link-see-all">Voir tout</router-link>
@@ -545,20 +550,20 @@ onMounted(loadAll)
           <div v-else class="empty-state-block">
             <span class="empty-icon">📅</span>
             <p>Aucun événement planifié à venir.</p>
-            <router-link to="/events" class="btn-empty-action">Programmer un événement</router-link>
+            <router-link v-if="authStore.hasPermission('events.create')" to="/events" class="btn-empty-action">Programmer un événement</router-link>
           </div>
         </div>
       </div>
 
       <!-- Canaux de Communication Directs -->
-      <div class="card">
+      <div v-if="visibleChannels.length" class="card">
         <div class="card-header">
           <h3 class="card-title">Canaux de communication</h3>
         </div>
         <div class="card-body">
           <div class="channels-grid">
             <div 
-              v-for="ch in channels" 
+            v-for="ch in visibleChannels"
               :key="ch.key" 
               class="channel-item interactive-channel"
               @click="navigateTo(ch.route)"
@@ -577,7 +582,7 @@ onMounted(loadAll)
     <!-- Rangée 3 : Indicateurs Numériques & Outils Pastoraux -->
     <div class="dashboard-grid-row-3">
       
-      <div class="device-card" @click="navigateTo('/live-streams')" style="cursor:pointer">
+      <div v-if="authStore.hasPermission('live_streams.view')" class="device-card" @click="navigateTo('/live-streams')" style="cursor:pointer">
         <div class="device-icon" :class="devices.smart_terminals?.color">🎥</div>
         <div>
           <h4 class="device-info-label">{{ devices.smart_terminals?.label || 'Régie & Diffusions' }}</h4>
@@ -586,7 +591,7 @@ onMounted(loadAll)
         </div>
       </div>
 
-      <div class="device-card" @click="navigateTo('/members')" style="cursor:pointer">
+      <div v-if="authStore.hasPermission('members.view')" class="device-card" @click="navigateTo('/members')" style="cursor:pointer">
         <div class="device-icon" :class="devices.rfid_cards?.color">💳</div>
         <div>
           <h4 class="device-info-label">{{ devices.rfid_cards?.label || 'Badges & Cartes' }}</h4>
@@ -595,7 +600,7 @@ onMounted(loadAll)
         </div>
       </div>
 
-      <div class="device-card" @click="navigateTo('/presences')" style="cursor:pointer">
+      <div v-if="authStore.hasPermission('attendance.view')" class="device-card" @click="navigateTo('/presences')" style="cursor:pointer">
         <div class="device-icon" :class="devices.qr_code?.color">📱</div>
         <div>
           <h4 class="device-info-label">{{ devices.qr_code?.label || 'Scans QR Présence' }}</h4>
@@ -604,7 +609,7 @@ onMounted(loadAll)
         </div>
       </div>
 
-      <div class="device-card" @click="navigateTo('/members')" style="cursor:pointer">
+      <div v-if="authStore.hasPermission('members.view')" class="device-card" @click="navigateTo('/members')" style="cursor:pointer">
         <div class="device-icon" :class="devices.telephone?.color">📞</div>
         <div>
           <h4 class="device-info-label">{{ devices.telephone?.label || 'Fidèles Joignables' }}</h4>

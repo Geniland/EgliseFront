@@ -4,6 +4,7 @@ import {
   generateSessionQr, invalidateSessionQr, markAllAbsent, getSessionsStats,
   listAttendances, createAttendance, bulkAttendance, updateAttendance, deleteAttendance,
   listAbsenceReasons, createAbsenceReason, updateAbsenceReason, deleteAbsenceReason,
+  scanMemberAttendance,
 } from '../api/attendance'
 
 function buildErrorMap(data) {
@@ -125,11 +126,15 @@ export const useAttendanceStore = defineStore('attendance', {
       }
     },
 
-    async invalidateQr(id) {
+    async invalidateQr(id, options = {}) {
       try {
-        const { data } = await invalidateSessionQr(id)
+        const payload = {
+          process_absences: !!options?.process_absences ?? true,
+          ...(options || {}),
+        }
+        const { data } = await invalidateSessionQr(id, payload)
         this.qrData = null
-        return { ok: true, message: data?.message }
+        return { ok: true, message: data?.message, report: data?.report }
       } catch (e) {
         return { ok: false, message: e?.data?.message || e.message }
       }
@@ -264,6 +269,23 @@ export const useAttendanceStore = defineStore('attendance', {
         return { ok: true, message: data?.message }
       } catch (e) {
         return { ok: false, message: e?.data?.message || e.message }
+      }
+    },
+
+    async scanMember(payload) {
+      try {
+        const { data } = await scanMemberAttendance(payload)
+        return { ok: true, ...data }
+      } catch (e) {
+        return {
+          ok: false,
+          message: e?.data?.message || e.message || 'Erreur de scan',
+          already_registered: e?.data?.already_registered || false,
+          member: e?.data?.member || null,
+          attendance: e?.data?.attendance || null,
+          status: e?.data?.status || null,
+          statusCode: e?.status || null,
+        }
       }
     },
   },

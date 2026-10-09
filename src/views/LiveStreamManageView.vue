@@ -55,7 +55,7 @@
               </svg>
             </router-link>
             <h1 class="stream-title">{{ stream.title }}</h1>
-            <button 
+            <button v-if="authStore.hasPermission('live_streams.update')"
               class="btn-icon-edit" 
               @click="openEditModal" 
               title="Modifier les informations"
@@ -171,7 +171,7 @@
             <span class="metric-val mono">{{ calculateTotalDuration(stream.started_at, stream.ended_at) }}</span>
           </div>
 
-          <div v-if="stream.status === 'ended'" class="metric-pill action">
+          <div v-if="stream.status === 'ended' && authStore.hasPermission('live_streams.publish')" class="metric-pill action">
             <button class="btn-publish-quick" @click="openPublishModal">
               <i class="bi bi-folder-plus"></i> Archiver en VOD
             </button>
@@ -293,7 +293,7 @@
               </p>
 
               <!-- État : Non Démarré (Bouton Passer en direct) -->
-              <div v-if="stream.status !== 'live' && stream.status !== 'ended'" class="action-wrap">
+              <div v-if="stream.status !== 'live' && stream.status !== 'ended' && authStore.hasPermission('live_streams.publish')" class="action-wrap">
                 <button 
                   @click="confirmStartLive" 
                   class="btn-master-action btn-start-broadcast"
@@ -317,7 +317,7 @@
               </div>
 
               <!-- État : En Direct (Bouton Couper / Terminer) -->
-              <div v-else-if="stream.status === 'live'" class="action-wrap">
+              <div v-else-if="stream.status === 'live' && authStore.hasPermission('live_streams.end')" class="action-wrap">
                 <div class="live-active-box">
                   <div class="pulsing-circle"></div>
                   <div>
@@ -341,7 +341,7 @@
               </div>
 
               <!-- État : Terminé -->
-              <div v-else class="action-wrap">
+              <div v-else-if="stream.status === 'ended' && authStore.hasPermission('live_streams.publish')" class="action-wrap">
                 <div class="ended-status-box">
                   <i class="bi bi-archive-fill text-muted"></i>
                   <p>Ce direct est archivé. Le flux reste disponible en VOD pour les fidèles.</p>
@@ -362,7 +362,7 @@
           </div>
 
           <!-- Carte 2 : Paramètres Encodeur OBS Studio -->
-          <div class="studio-card encoder-card mt-4">
+          <div v-if="authStore.hasPermission('live_streams.configure')" class="studio-card encoder-card mt-4">
             <div class="card-header-studio">
               <div class="header-label">
                 <i class="bi bi-gear-wide-connected"></i>
@@ -448,7 +448,7 @@
 
           <!-- Bouton de suppression sécurisé -->
           <div class="danger-zone-box mt-4">
-            <button class="btn-delete-stream" @click="handleDeleteStream">
+            <button v-if="authStore.hasPermission('live_streams.delete')" class="btn-delete-stream" @click="handleDeleteStream">
               <i class="bi bi-trash"></i> Supprimer cette diffusion
             </button>
           </div>
@@ -548,7 +548,7 @@
             >
               Annuler
             </button>
-            <button 
+            <button v-if="authStore.hasPermission('live_streams.update')"
               type="submit" 
               class="btn-primary-action" 
               :disabled="savingEdit"
@@ -628,7 +628,7 @@
             >
               Annuler
             </button>
-            <button 
+            <button v-if="authStore.hasPermission('live_streams.publish')"
               type="submit" 
               class="btn-primary-action" 
               :disabled="publishing"
@@ -704,12 +704,14 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useLiveStreamStore } from '@/stores/liveStream'
+import { useAuthStore } from '@/stores/auth'
 import LiveStatus from '@/components/live/LiveStatus.vue'
 import api from '@/utils/api'
 
 const route = useRoute()
 const router = useRouter()
 const store = useLiveStreamStore()
+const authStore = useAuthStore()
 
 // State
 const stream = ref(null)

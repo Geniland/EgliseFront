@@ -7,6 +7,8 @@ export const useAuthStore = defineStore('auth', {
     token: localStorage.getItem('auth_token') || null,
     loading: false,
     error: null,
+    permissionsLoaded: false,
+    permissionsCheckedAt: 0,
     churches: JSON.parse(localStorage.getItem('auth_churches') || '[]'),
     currentChurchId: (() => {
       try {
@@ -20,6 +22,16 @@ export const useAuthStore = defineStore('auth', {
 
   getters: {
     isAuthenticated: (state) => !!state.token,
+    hasPermission: (state) => (permission) => {
+      if (Number(state.user?.role_id) === 1 || state.user?.role?.name === 'Super Admin') return true
+      return Array.isArray(state.user?.permissions) && state.user.permissions.includes(permission)
+    },
+    hasAnyPermission: (state) => (permissions) => {
+      if (Number(state.user?.role_id) === 1 || state.user?.role?.name === 'Super Admin') return true
+      return Array.isArray(permissions) && permissions.some(permission =>
+        Array.isArray(state.user?.permissions) && state.user.permissions.includes(permission)
+      )
+    },
     userName: (state) => state.user?.name || 'Utilisateur',
     userRole: (state) => state.user?.role?.name || 'Fidèle',
     userChurchName: (state) => {
@@ -57,6 +69,8 @@ export const useAuthStore = defineStore('auth', {
         const response = await api.post('/login', credentials)
         this.token = response.data.token
         this.user = response.data.user
+        this.permissionsLoaded = Array.isArray(this.user?.permissions)
+        this.permissionsCheckedAt = Date.now()
         localStorage.setItem('auth_token', this.token)
         localStorage.setItem('auth_user', JSON.stringify(this.user))
         this.currentChurchId = null
@@ -78,6 +92,8 @@ export const useAuthStore = defineStore('auth', {
         const response = await api.post('/register', data)
         this.token = response.data.token
         this.user = response.data.user
+        this.permissionsLoaded = Array.isArray(this.user?.permissions)
+        this.permissionsCheckedAt = Date.now()
         localStorage.setItem('auth_token', this.token)
         localStorage.setItem('auth_user', JSON.stringify(this.user))
         this.currentChurchId = null
@@ -101,6 +117,8 @@ export const useAuthStore = defineStore('auth', {
       } finally {
         this.token = null
         this.user = null
+        this.permissionsLoaded = false
+        this.permissionsCheckedAt = 0
         this.churches = []
         this.currentChurchId = null
         localStorage.removeItem('auth_token')
@@ -112,12 +130,24 @@ export const useAuthStore = defineStore('auth', {
 
     async fetchUser() {
       try {
-        const response = await api.get('/user')
-        this.user = response.data
+        const response = await api.get('/me')
+        this.user = response.data?.user || response.data
+        this.permissionsLoaded = Array.isArray(this.user?.permissions)
+        this.permissionsCheckedAt = Date.now()
         localStorage.setItem('auth_user', JSON.stringify(this.user))
+        return this.permissionsLoaded
       } catch (err) {
         console.warn('Fetch user error:', err)
+        await this.logout()
+        return false
       }
+    },
+
+    async ensurePermissions() {
+      if (!this.token) return false
+      const isFresh = this.permissionsLoaded && Date.now() - this.permissionsCheckedAt < 60000
+      if (isFresh) return true
+      return this.fetchUser()
     },
 
     async fetchChurches({ silent = false } = {}) {

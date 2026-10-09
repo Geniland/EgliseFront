@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import {
   listMembers, getMember, createMember, updateMember, deleteMember,
   listMinistries, listFamilies, createFamily, getMemberStatic, toggleMemberStatus,
+  getMemberQrCode, getMyQrCode,
 } from '../api/members'
 
 function buildErrorMap(data) {
@@ -33,6 +34,8 @@ export const useMembersStore = defineStore('members', {
     saving: false,
     deleting: false,
     error: '',
+    myQrCode: null,
+    memberQrCache: {},
   }),
   actions: {
     async loadMembers(params = {}) {
@@ -139,6 +142,28 @@ export const useMembersStore = defineStore('members', {
         return { ok: false, message: e?.data?.message || e.message }
       } finally {
         this.deleting = false
+      }
+    },
+
+    async loadMyQrCode(size = 280) {
+      try {
+        const { data } = await getMyQrCode(size)
+        this.myQrCode = data
+        return data
+      } catch (e) {
+        return null
+      }
+    },
+
+    async loadMemberQrCode(id, size = 280) {
+      const key = String(id) + '_' + size
+      if (this.memberQrCache[key]) return this.memberQrCache[key]
+      try {
+        const { data } = await getMemberQrCode(id, size)
+        this.memberQrCache[key] = data
+        return data
+      } catch (e) {
+        return null
       }
     },
   },

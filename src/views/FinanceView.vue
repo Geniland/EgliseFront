@@ -1,8 +1,10 @@
 <script setup>
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useFinanceStore } from '../stores/finance'
+import { useAuthStore } from '../stores/auth'
 
 const fStore = useFinanceStore()
+const authStore = useAuthStore()
 
 const activeTab = ref('overview')
 const accountSearch = ref('')
@@ -526,8 +528,8 @@ onMounted(async () => {
         <p class="page-subtitle">Comptes, catégories, recettes, dépenses, transferts et approbation</p>
       </div>
       <div class="page-header-actions">
-        <button class="sa-btn sa-btn-primary" @click="openCreateTx" style="margin-right:8px">➕ Nouvelle transaction</button>
-        <button class="sa-btn sa-btn-primary" @click="openTransfer" style="background:linear-gradient(135deg,#8b5cf6,#6366f1)">↔️ Transfert</button>
+        <button v-if="authStore.hasPermission('finance.create')" class="sa-btn sa-btn-primary" @click="openCreateTx" style="margin-right:8px">➕ Nouvelle transaction</button>
+        <button v-if="authStore.hasPermission('finance.transfer')" class="sa-btn sa-btn-primary" @click="openTransfer" style="background:linear-gradient(135deg,#8b5cf6,#6366f1)">↔️ Transfert</button>
       </div>
     </div>
 
@@ -663,9 +665,9 @@ onMounted(async () => {
                 <td><span :class="txStatusBadge(tx.status)" style="font-size:10px;padding:3px 8px">{{ tx.status_label }}</span></td>
                 <td><div class="row-actions">
                   <button class="btn-icon view" title="Voir" @click="openDetail(tx)">👁️</button>
-                  <button v-if="tx.status==='pending'" class="btn-icon approve" title="Approuver" @click="openApprove(tx)">✅</button>
-                  <button v-if="tx.status==='pending'" class="btn-icon reject" title="Rejeter" @click="openReject(tx)">❌</button>
-                  <button v-if="tx.status==='approved'" class="btn-icon reverse" title="Contre-écriture" @click="askReverseTx(tx)">↩️</button>
+                  <button v-if="tx.status==='pending' && authStore.hasPermission('finance.approve')" class="btn-icon approve" title="Approuver" @click="openApprove(tx)">✅</button>
+                  <button v-if="tx.status==='pending' && authStore.hasPermission('finance.reject')" class="btn-icon reject" title="Rejeter" @click="openReject(tx)">❌</button>
+                  <button v-if="tx.status==='approved' && authStore.hasPermission('finance.update')" class="btn-icon reverse" title="Contre-écriture" @click="askReverseTx(tx)">↩️</button>
                 </div></td>
               </tr>
             </tbody>
@@ -692,7 +694,7 @@ onMounted(async () => {
             <option :value="20">20 / page</option><option :value="50">50 / page</option><option :value="100">100 / page</option>
           </select>
           <div style="flex:1"></div>
-          <button class="sa-btn sa-btn-primary" @click="openCreateAccount">➕ Nouveau compte</button>
+          <button v-if="authStore.hasPermission('finance.manage_accounts')" class="sa-btn sa-btn-primary" @click="openCreateAccount">➕ Nouveau compte</button>
         </div>
 
         <div style="overflow:auto">
@@ -711,9 +713,9 @@ onMounted(async () => {
                 <td style="text-align:center">{{ a.transactions_count || 0 }}</td>
                 <td><span :class="accountStatusBadge(a.status)" style="font-size:10px;padding:3px 8px">{{ a.status ? 'Actif' : 'Inactif' }}</span></td>
                 <td><div class="row-actions">
-                  <button class="btn-icon edit" title="Modifier" @click="openEditAccount(a)">✏️</button>
-                  <button class="btn-icon status" title="Activer/Désactiver" @click="confirmAccToggle(a)">🔄</button>
-                  <button class="btn-icon delete" title="Supprimer" @click="askDeleteAccount(a)">🗑️</button>
+                  <button v-if="authStore.hasPermission('finance.manage_accounts')" class="btn-icon edit" title="Modifier" @click="openEditAccount(a)">✏️</button>
+                  <button v-if="authStore.hasPermission('finance.manage_accounts')" class="btn-icon status" title="Activer/Désactiver" @click="confirmAccToggle(a)">🔄</button>
+                  <button v-if="authStore.hasPermission('finance.manage_accounts')" class="btn-icon delete" title="Supprimer" @click="askDeleteAccount(a)">🗑️</button>
                 </div></td>
               </tr>
             </tbody>
@@ -743,7 +745,7 @@ onMounted(async () => {
               <option value="active">Actif</option>
               <option value="inactive">Inactif</option>
             </select>
-            <button class="sa-btn sa-btn-primary" style="background:linear-gradient(135deg,#10b981,#059669)" @click="openCreateCategory('income')">➕ Catégorie</button>
+            <button v-if="authStore.hasPermission('finance.manage_categories')" class="sa-btn sa-btn-primary" style="background:linear-gradient(135deg,#10b981,#059669)" @click="openCreateCategory('income')">➕ Catégorie</button>
           </div>
           <div style="overflow:auto;max-height:460px">
             <table class="sa-table">
@@ -756,18 +758,18 @@ onMounted(async () => {
                     </td>
                     <td><span :class="accountStatusBadge(c.status)" style="font-size:10px;padding:3px 8px">{{ c.status?'Actif':'Inactif' }}</span></td>
                     <td><div class="row-actions">
-                      <button class="btn-icon edit" title="Modifier" @click="openEditCategory(c)">✏️</button>
-                      <button class="btn-icon status" title="Activer/Désactiver" @click="confirmCatToggle(c)">🔄</button>
-                      <button class="btn-icon delete" title="Supprimer" @click="askDeleteCategory(c)">🗑️</button>
+                      <button v-if="authStore.hasPermission('finance.manage_categories')" class="btn-icon edit" title="Modifier" @click="openEditCategory(c)">✏️</button>
+                      <button v-if="authStore.hasPermission('finance.manage_categories')" class="btn-icon status" title="Activer/Désactiver" @click="confirmCatToggle(c)">🔄</button>
+                      <button v-if="authStore.hasPermission('finance.manage_categories')" class="btn-icon delete" title="Supprimer" @click="askDeleteCategory(c)">🗑️</button>
                     </div></td>
                   </tr>
                   <tr v-if="c.children?.length" v-for="child in c.children" :key="'in'+c.id+'ch'+child.id">
                     <td style="padding-left:40px">└ {{ child.name }}</td>
                     <td><span :class="accountStatusBadge(child.status)" style="font-size:10px;padding:3px 8px">{{ child.status?'Actif':'Inactif' }}</span></td>
                     <td><div class="row-actions">
-                      <button class="btn-icon edit" title="Modifier" @click="openEditCategory(child)">✏️</button>
-                      <button class="btn-icon status" title="Activer/Désactiver" @click="confirmCatToggle(child)">🔄</button>
-                      <button class="btn-icon delete" title="Supprimer" @click="askDeleteCategory(child)">🗑️</button>
+                      <button v-if="authStore.hasPermission('finance.manage_categories')" class="btn-icon edit" title="Modifier" @click="openEditCategory(child)">✏️</button>
+                      <button v-if="authStore.hasPermission('finance.manage_categories')" class="btn-icon status" title="Activer/Désactiver" @click="confirmCatToggle(child)">🔄</button>
+                      <button v-if="authStore.hasPermission('finance.manage_categories')" class="btn-icon delete" title="Supprimer" @click="askDeleteCategory(child)">🗑️</button>
                     </div></td>
                   </tr>
                 </template>
@@ -785,7 +787,7 @@ onMounted(async () => {
               <option value="active">Actif</option>
               <option value="inactive">Inactif</option>
             </select>
-            <button class="sa-btn sa-btn-primary" style="background:linear-gradient(135deg,#ef4444,#dc2626)" @click="openCreateCategory('expense')">➕ Catégorie</button>
+            <button v-if="authStore.hasPermission('finance.manage_categories')" class="sa-btn sa-btn-primary" style="background:linear-gradient(135deg,#ef4444,#dc2626)" @click="openCreateCategory('expense')">➕ Catégorie</button>
           </div>
           <div style="overflow:auto;max-height:460px">
             <table class="sa-table">
@@ -798,18 +800,18 @@ onMounted(async () => {
                     </td>
                     <td><span :class="accountStatusBadge(c.status)" style="font-size:10px;padding:3px 8px">{{ c.status?'Actif':'Inactif' }}</span></td>
                     <td><div class="row-actions">
-                      <button class="btn-icon edit" title="Modifier" @click="openEditCategory(c)">✏️</button>
-                      <button class="btn-icon status" title="Activer/Désactiver" @click="confirmCatToggle(c)">🔄</button>
-                      <button class="btn-icon delete" title="Supprimer" @click="askDeleteCategory(c)">🗑️</button>
+                      <button v-if="authStore.hasPermission('finance.manage_categories')" class="btn-icon edit" title="Modifier" @click="openEditCategory(c)">✏️</button>
+                      <button v-if="authStore.hasPermission('finance.manage_categories')" class="btn-icon status" title="Activer/Désactiver" @click="confirmCatToggle(c)">🔄</button>
+                      <button v-if="authStore.hasPermission('finance.manage_categories')" class="btn-icon delete" title="Supprimer" @click="askDeleteCategory(c)">🗑️</button>
                     </div></td>
                   </tr>
                   <tr v-if="c.children?.length" v-for="child in c.children" :key="'ex'+c.id+'ch'+child.id">
                     <td style="padding-left:40px">└ {{ child.name }}</td>
                     <td><span :class="accountStatusBadge(child.status)" style="font-size:10px;padding:3px 8px">{{ child.status?'Actif':'Inactif' }}</span></td>
                     <td><div class="row-actions">
-                      <button class="btn-icon edit" title="Modifier" @click="openEditCategory(child)">✏️</button>
-                      <button class="btn-icon status" title="Activer/Désactiver" @click="confirmCatToggle(child)">🔄</button>
-                      <button class="btn-icon delete" title="Supprimer" @click="askDeleteCategory(child)">🗑️</button>
+                      <button v-if="authStore.hasPermission('finance.manage_categories')" class="btn-icon edit" title="Modifier" @click="openEditCategory(child)">✏️</button>
+                      <button v-if="authStore.hasPermission('finance.manage_categories')" class="btn-icon status" title="Activer/Désactiver" @click="confirmCatToggle(child)">🔄</button>
+                      <button v-if="authStore.hasPermission('finance.manage_categories')" class="btn-icon delete" title="Supprimer" @click="askDeleteCategory(child)">🗑️</button>
                     </div></td>
                   </tr>
                 </template>
@@ -848,8 +850,8 @@ onMounted(async () => {
             <option :value="30">30 / p.</option><option :value="60">60 / p.</option><option :value="100">100 / p.</option>
           </select>
           <div style="flex:1"></div>
-          <button class="sa-btn sa-btn-primary" style="margin-right:6px" @click="openCreateTx">➕ Nouveau</button>
-          <button class="sa-btn sa-btn-primary" style="background:linear-gradient(135deg,#8b5cf6,#6366f1)" @click="openTransfer">↔️ Transfert</button>
+          <button v-if="authStore.hasPermission('finance.create')" class="sa-btn sa-btn-primary" style="margin-right:6px" @click="openCreateTx">➕ Nouveau</button>
+          <button v-if="authStore.hasPermission('finance.transfer')" class="sa-btn sa-btn-primary" style="background:linear-gradient(135deg,#8b5cf6,#6366f1)" @click="openTransfer">↔️ Transfert</button>
         </div>
 
         <div style="overflow:auto">
@@ -882,12 +884,12 @@ onMounted(async () => {
                 </td>
                 <td><div class="row-actions">
                   <button class="btn-icon view" title="Détails" @click="openDetail(tx)">👁️</button>
-                  <button class="btn-icon attach" title="Pièces jointes" @click="openAttach(tx)">📎</button>
-                  <button v-if="tx.can_be_edited" class="btn-icon edit" title="Modifier" @click="openEditTx(tx)">✏️</button>
-                  <button v-if="tx.status==='pending' && tx.can_current_user_approve" class="btn-icon approve" title="Approuver" @click="openApprove(tx)">✅</button>
-                  <button v-if="tx.status==='pending' && tx.can_current_user_reject" class="btn-icon reject" title="Rejeter" @click="openReject(tx)">❌</button>
-                  <button v-if="tx.status==='approved'" class="btn-icon reverse" title="Contre-écriture" @click="askReverseTx(tx)">↩️</button>
-                  <button v-if="tx.can_be_deleted" class="btn-icon delete" title="Supprimer" @click="askDeleteTx(tx)">🗑️</button>
+                  <button v-if="authStore.hasPermission('finance.attachments')" class="btn-icon attach" title="Pièces jointes" @click="openAttach(tx)">📎</button>
+                  <button v-if="tx.can_be_edited && authStore.hasPermission('finance.update')" class="btn-icon edit" title="Modifier" @click="openEditTx(tx)">✏️</button>
+                  <button v-if="tx.status==='pending' && tx.can_current_user_approve && authStore.hasPermission('finance.approve')" class="btn-icon approve" title="Approuver" @click="openApprove(tx)">✅</button>
+                  <button v-if="tx.status==='pending' && tx.can_current_user_reject && authStore.hasPermission('finance.reject')" class="btn-icon reject" title="Rejeter" @click="openReject(tx)">❌</button>
+                  <button v-if="tx.status==='approved' && authStore.hasPermission('finance.update')" class="btn-icon reverse" title="Contre-écriture" @click="askReverseTx(tx)">↩️</button>
+                  <button v-if="tx.can_be_deleted && authStore.hasPermission('finance.delete')" class="btn-icon delete" title="Supprimer" @click="askDeleteTx(tx)">🗑️</button>
                 </div></td>
               </tr>
               <tr v-if="!fStore.transactions.length"><td colspan="9" class="sa-empty">Aucune transaction</td></tr>
@@ -948,7 +950,7 @@ onMounted(async () => {
         </div>
         <div class="modal-footer">
           <button class="sa-btn sa-btn-secondary" @click="showAccountModal=false">Annuler</button>
-          <button class="sa-btn sa-btn-primary" @click="submitAccount">{{ accountEditing ? 'Enregistrer' : 'Créer le compte' }}</button>
+          <button v-if="authStore.hasPermission('finance.manage_accounts')" class="sa-btn sa-btn-primary" @click="submitAccount">{{ accountEditing ? 'Enregistrer' : 'Créer le compte' }}</button>
         </div>
       </div>
     </div>
@@ -992,7 +994,7 @@ onMounted(async () => {
         </div>
         <div class="modal-footer">
           <button class="sa-btn sa-btn-secondary" @click="showCategoryModal=false">Annuler</button>
-          <button class="sa-btn sa-btn-primary" @click="submitCategory">{{ categoryEditing ? 'Enregistrer' : 'Créer' }}</button>
+          <button v-if="authStore.hasPermission('finance.manage_categories')" class="sa-btn sa-btn-primary" @click="submitCategory">{{ categoryEditing ? 'Enregistrer' : 'Créer' }}</button>
         </div>
       </div>
     </div>
@@ -1039,7 +1041,7 @@ onMounted(async () => {
               <div v-if="formErrors.category_id" class="sa-error">{{ formErrors.category_id }}</div>
               <div v-if="(transactionForm.type === 'income' && !txIncomeCats.length) || (transactionForm.type === 'expense' && !txExpenseCats.length)" style="font-size:11.5px;color:#d97706;margin-top:3px">
                 ℹ️ Aucune catégorie {{ transactionForm.type === 'income' ? 'de recette' : 'de dépense' }} trouvée.
-                <button type="button" @click="showTransactionModal=false;openCreateCategory(transactionForm.type)" style="background:none;border:none;color:#2563eb;font-weight:600;text-decoration:underline;cursor:pointer;padding:0;margin-left:4px">
+                <button v-if="authStore.hasPermission('finance.manage_categories')" type="button" @click="showTransactionModal=false;openCreateCategory(transactionForm.type)" style="background:none;border:none;color:#2563eb;font-weight:600;text-decoration:underline;cursor:pointer;padding:0;margin-left:4px">
                   Créer une catégorie
                 </button>
               </div>
@@ -1076,7 +1078,7 @@ onMounted(async () => {
         </div>
         <div class="modal-footer">
           <button class="sa-btn sa-btn-secondary" @click="showTransactionModal=false">Annuler</button>
-          <button class="sa-btn sa-btn-primary" @click="submitTransaction">{{ txEditing ? 'Enregistrer' : 'Créer' }}</button>
+          <button v-if="authStore.hasPermission(txEditing ? 'finance.update' : 'finance.create')" class="sa-btn sa-btn-primary" @click="submitTransaction">{{ txEditing ? 'Enregistrer' : 'Créer' }}</button>
         </div>
       </div>
     </div>
@@ -1132,7 +1134,7 @@ onMounted(async () => {
         </div>
         <div class="modal-footer">
           <button class="sa-btn sa-btn-secondary" @click="showTransferModal=false">Annuler</button>
-          <button class="sa-btn sa-btn-primary" style="background:linear-gradient(135deg,#8b5cf6,#6366f1)" @click="submitTransfer">⏵ Exécuter le transfert</button>
+          <button v-if="authStore.hasPermission('finance.transfer')" class="sa-btn sa-btn-primary" style="background:linear-gradient(135deg,#8b5cf6,#6366f1)" @click="submitTransfer">⏵ Exécuter le transfert</button>
         </div>
       </div>
     </div>
@@ -1262,7 +1264,7 @@ onMounted(async () => {
           <div style="margin-top:22px">
             <div class="sa-user-cell" style="margin-bottom:10px">
               <h3 class="card-title" style="margin:0">📎 Pièces jointes ({{ fStore.selectedTransactionAttachments.length }})</h3>
-              <button class="sa-btn sa-btn-secondary" @click="openAttach(detailTx)">➕ Ajouter</button>
+                  <button v-if="authStore.hasPermission('finance.attachments')" class="sa-btn sa-btn-secondary" @click="openAttach(detailTx)">➕ Ajouter</button>
             </div>
             <div v-if="!fStore.selectedTransactionAttachments.length" class="sa-empty">Aucune pièce jointe</div>
             <div v-else style="display:flex;flex-wrap:wrap;gap:10px">
@@ -1278,7 +1280,7 @@ onMounted(async () => {
                   <div style="font-size:10px;color:#6b7280;margin-top:2px">{{ att.formatted_size }}</div>
                   <div class="row-actions" style="margin-top:8px">
                     <button class="btn-icon view" title="Télécharger" @click="window.open(att.file_url,'_blank')">⬇️</button>
-                    <button class="btn-icon delete" title="Supprimer" @click="askDeleteAtt(att)">🗑️</button>
+                    <button v-if="authStore.hasPermission('finance.attachments')" class="btn-icon delete" title="Supprimer" @click="askDeleteAtt(att)">🗑️</button>
                   </div>
                 </div>
               </div>
@@ -1287,10 +1289,10 @@ onMounted(async () => {
         </div>
         <div class="modal-footer" v-if="detailTx">
           <button class="sa-btn sa-btn-secondary" @click="showDetailModal=false">Fermer</button>
-          <button v-if="detailTx.can_be_edited" class="sa-btn sa-btn-secondary" @click="showDetailModal=false;openEditTx(detailTx)">✏️ Modifier</button>
-          <button v-if="detailTx.status==='pending' && detailTx.can_current_user_approve" class="sa-btn sa-btn-primary" style="background:linear-gradient(135deg,#10b981,#059669)" @click="showDetailModal=false;openApprove(detailTx)">✅ Approuver</button>
-          <button v-if="detailTx.status==='pending' && detailTx.can_current_user_reject" class="sa-btn sa-btn-primary" style="background:linear-gradient(135deg,#ef4444,#dc2626)" @click="showDetailModal=false;openReject(detailTx)">❌ Rejeter</button>
-          <button v-if="detailTx.status==='approved'" class="sa-btn sa-btn-secondary" @click="showDetailModal=false;askReverseTx(detailTx)">↩️ Contre-écrire</button>
+          <button v-if="detailTx.can_be_edited && authStore.hasPermission('finance.update')" class="sa-btn sa-btn-secondary" @click="showDetailModal=false;openEditTx(detailTx)">✏️ Modifier</button>
+          <button v-if="detailTx.status==='pending' && detailTx.can_current_user_approve && authStore.hasPermission('finance.approve')" class="sa-btn sa-btn-primary" style="background:linear-gradient(135deg,#10b981,#059669)" @click="showDetailModal=false;openApprove(detailTx)">✅ Approuver</button>
+          <button v-if="detailTx.status==='pending' && detailTx.can_current_user_reject && authStore.hasPermission('finance.reject')" class="sa-btn sa-btn-primary" style="background:linear-gradient(135deg,#ef4444,#dc2626)" @click="showDetailModal=false;openReject(detailTx)">❌ Rejeter</button>
+          <button v-if="detailTx.status==='approved' && authStore.hasPermission('finance.update')" class="sa-btn sa-btn-secondary" @click="showDetailModal=false;askReverseTx(detailTx)">↩️ Contre-écrire</button>
         </div>
       </div>
     </div>
@@ -1310,7 +1312,7 @@ onMounted(async () => {
               📄 <strong>{{ attachForm.file.name }}</strong> · {{ (attachForm.file.size/1024).toFixed(1) }} Ko
             </div>
           </div>
-          <button class="sa-btn sa-btn-primary" @click="submitAttachment" :disabled="!attachForm.file || fStore.saving">
+          <button v-if="authStore.hasPermission('finance.attachments')" class="sa-btn sa-btn-primary" @click="submitAttachment" :disabled="!attachForm.file || fStore.saving">
             {{ fStore.saving ? '⏳ Upload...' : '⬆️ Envoyer la pièce jointe' }}
           </button>
           <hr style="margin:20px 0;border:0;border-top:1px solid #e5e7eb" />
@@ -1328,7 +1330,7 @@ onMounted(async () => {
                   <div style="font-size:10px;color:#6b7280;margin-top:2px">{{ att.formatted_size }}</div>
                   <div class="row-actions" style="margin-top:6px">
                     <button class="btn-icon view" @click="window.open(att.file_url,'_blank')">⬇️</button>
-                    <button class="btn-icon delete" @click="askDeleteAtt(att)">🗑️</button>
+                    <button v-if="authStore.hasPermission('finance.attachments')" class="btn-icon delete" @click="askDeleteAtt(att)">🗑️</button>
                   </div>
                 </div>
               </div>

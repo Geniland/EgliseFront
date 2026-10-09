@@ -24,8 +24,8 @@ export function generateSessionQr(id, validityMinutes) {
   return api.post(`/attendance/sessions/${id}/generate-qr`, { validity_minutes: validityMinutes })
 }
 
-export function invalidateSessionQr(id) {
-  return api.post(`/attendance/sessions/${id}/invalidate-qr`)
+export function invalidateSessionQr(id, data = {}) {
+  return api.post(`/attendance/sessions/${id}/invalidate-qr`, data || {})
 }
 
 export function markAllAbsent(id, override) {
@@ -62,6 +62,10 @@ export function deleteAttendance(id) {
 
 export function scanAttendance(data) {
   return api.post('/attendance/scan', data)
+}
+
+export function scanMemberAttendance(data) {
+  return api.post('/attendance/scan-member', data)
 }
 
 export function getMemberAttendanceHistory(memberId, params) {

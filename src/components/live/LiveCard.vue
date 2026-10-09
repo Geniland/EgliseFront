@@ -109,7 +109,7 @@
               </button>
 
               <button
-                v-if="canManage && (stream.status === 'ended' || stream.status === 'processing')"
+                v-if="canPublish && (stream.status === 'ended' || stream.status === 'processing')"
                 class="dropdown-item"
                 @click="emitPublish"
               >
@@ -130,7 +130,7 @@
               </a>
 
               <button
-                v-if="canManage"
+                v-if="canDelete"
                 class="dropdown-item item-danger"
                 @click="emitDelete"
               >
@@ -158,6 +158,14 @@ const props = defineProps({
   canManage: {
     type: Boolean,
     default: true,
+  },
+  canPublish: {
+    type: Boolean,
+    default: false,
+  },
+  canDelete: {
+    type: Boolean,
+    default: false,
   },
 })
 
